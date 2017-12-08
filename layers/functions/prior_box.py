@@ -32,7 +32,7 @@ class PriorBox(object):
     def forward(self):
         mean = []
         # TODO merge these
-        if self.version == 'v2':
+        if self.version == 'v2' or self.version == 'v2_512':
             for k, f in enumerate(self.feature_maps):
                 for i, j in product(range(f), repeat=2):
                     f_k = self.image_size / self.steps[k]

@@ -45,6 +45,7 @@ parser.add_argument('--top_k', default=5, type=int,
 parser.add_argument('--cuda', default=True, type=str2bool,
                     help='Use cuda to train model')
 parser.add_argument('--voc_root', default=VOCroot, help='Location of VOC root directory')
+parser.add_argument('--size', default=300, type=int, help='Which size to use (300/512)')
 
 args = parser.parse_args()
 
@@ -361,7 +362,7 @@ def test_net(save_folder, net, cuda, dataset, transform, top_k,
 
     # timers
     _t = {'im_detect': Timer(), 'misc': Timer()}
-    output_dir = get_output_dir('ssd300_120000', set_type)
+    output_dir = get_output_dir('ssd{}_120000'.format(im_size), set_type)
     det_file = os.path.join(output_dir, 'detections.pkl')
 
     for i in range(num_images):
@@ -409,16 +410,17 @@ def evaluate_detections(box_list, output_dir, dataset):
 if __name__ == '__main__':
     # load net
     num_classes = len(VOC_CLASSES) + 1 # +1 background
-    net = build_ssd('test', 300, num_classes) # initialize SSD
+    im_size = args.size
+    net = build_ssd('test', im_size, num_classes) # initialize SSD
     net.load_state_dict(torch.load(args.trained_model))
     net.eval()
     print('Finished loading model!')
     # load data
-    dataset = VOCDetection(args.voc_root, [('2007', set_type)], BaseTransform(300, dataset_mean), AnnotationTransform())
+    dataset = VOCDetection(args.voc_root, [('2007', set_type)], BaseTransform(im_size, dataset_mean), AnnotationTransform())
     if args.cuda:
         net = net.cuda()
         cudnn.benchmark = True
     # evaluation
     test_net(args.save_folder, net, args.cuda, dataset,
-             BaseTransform(net.size, dataset_mean), args.top_k, 300,
+             BaseTransform(net.size, dataset_mean), args.top_k, im_size,
              thresh=args.confidence_threshold)

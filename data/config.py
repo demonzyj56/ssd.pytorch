@@ -40,6 +40,23 @@ v2 = {
     'name' : 'v2',
 }
 
+#SSD512
+v2_512 = {
+    'feature_maps': [64, 32, 16, 8, 4, 2, 1],
+    'min_dim': 512,
+    'steps': [8, 16, 32, 64, 128, 256, 512],
+    'min_sizes': [35.84, 76.8, 153.6, 230.4, 307.2, 384.0, 460.8],
+    'max_sizes': [76.8, 153.6, 230.4, 307.2, 384.0, 460.8, 537.6],
+
+    'aspect_ratios' : [[2], [2, 3], [2, 3], [2, 3], [2, 3], [2], [2]],
+
+    'variance' : [0.1, 0.2],
+
+    'clip' : True,
+
+    'name' : 'v2_512',
+}
+
 # use average pooling layer as last layer before multibox layers
 v1 = {
     'feature_maps' : [38, 19, 10, 5, 3, 1],

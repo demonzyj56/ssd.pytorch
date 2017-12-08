@@ -74,7 +74,7 @@ def test_net(save_folder, net, cuda, testset, transform, thresh):
 if __name__ == '__main__':
     # load net
     num_classes = len(VOC_CLASSES) + 1 # +1 background
-    net = build_ssd('test', 300, num_classes) # initialize SSD
+    net = build_ssd('test', 512, num_classes) # initialize SSD
     net.load_state_dict(torch.load(args.trained_model))
     net.eval()
     print('Finished loading model!')

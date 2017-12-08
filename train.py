@@ -7,7 +7,7 @@ import torch.nn.init as init
 import argparse
 from torch.autograd import Variable
 import torch.utils.data as data
-from data import v2, v1, AnnotationTransform, VOCDetection, detection_collate, VOCroot, VOC_CLASSES
+from data import v2_512, v2, v1, AnnotationTransform, VOCDetection, detection_collate, VOCroot, VOC_CLASSES
 from utils.augmentations import SSDAugmentation
 from layers.modules import MultiBoxLoss
 from ssd import build_ssd
@@ -18,7 +18,8 @@ def str2bool(v):
     return v.lower() in ("yes", "true", "t", "1")
 
 parser = argparse.ArgumentParser(description='Single Shot MultiBox Detector Training')
-parser.add_argument('--version', default='v2', help='conv11_2(v2) or pool6(v1) as last layer')
+parser.add_argument('--size', default=300, type=int, help='use 300 or 512 as base size')
+parser.add_argument('--version', default='v2_512', help='conv11_2(v2) or pool6(v1) as last layer')
 parser.add_argument('--basenet', default='vgg16_reducedfc.pth', help='pretrained base model')
 parser.add_argument('--jaccard_threshold', default=0.5, type=float, help='Min Jaccard index for matching')
 parser.add_argument('--batch_size', default=16, type=int, help='Batch size for training')
@@ -32,7 +33,7 @@ parser.add_argument('--momentum', default=0.9, type=float, help='momentum')
 parser.add_argument('--weight_decay', default=5e-4, type=float, help='Weight decay for SGD')
 parser.add_argument('--gamma', default=0.1, type=float, help='Gamma update for SGD')
 parser.add_argument('--log_iters', default=True, type=bool, help='Print the loss at each iteration')
-parser.add_argument('--visdom', default=False, type=str2bool, help='Use visdom to for loss visualization')
+parser.add_argument('--visdom', default=True, type=str2bool, help='Use visdom to for loss visualization')
 parser.add_argument('--send_images_to_visdom', type=str2bool, default=False, help='Sample a random image from each 10th batch, send it to visdom after augmentations step')
 parser.add_argument('--save_folder', default='weights/', help='Location to save checkpoint models')
 parser.add_argument('--voc_root', default=VOCroot, help='Location of VOC root directory')
@@ -43,14 +44,15 @@ if args.cuda and torch.cuda.is_available():
 else:
     torch.set_default_tensor_type('torch.FloatTensor')
 
-cfg = (v1, v2)[args.version == 'v2']
+#  cfg = (v1, v2)[args.version == 'v2']
+cfg = v2_512 if args.version == 'v2_512' else v2
 
 if not os.path.exists(args.save_folder):
     os.mkdir(args.save_folder)
 
 train_sets = [('2007', 'trainval'), ('2012', 'trainval')]
 # train_sets = 'train'
-ssd_dim = 300  # only support 300 now
+ssd_dim = args.size
 means = (104, 117, 123)  # only support voc now
 num_classes = len(VOC_CLASSES) + 1
 batch_size = args.batch_size
@@ -66,11 +68,11 @@ if args.visdom:
     import visdom
     viz = visdom.Visdom()
 
-ssd_net = build_ssd('train', 300, num_classes)
+ssd_net = build_ssd('train', ssd_dim, num_classes)
 net = ssd_net
 
 if args.cuda:
-    net = torch.nn.DataParallel(ssd_net)
+    #  net = torch.nn.DataParallel(ssd_net)
     cudnn.benchmark = True
 
 if args.resume:
@@ -212,8 +214,11 @@ def train():
                 )
         if iteration % 5000 == 0:
             print('Saving state, iter:', iteration)
-            torch.save(ssd_net.state_dict(), 'weights/ssd300_0712_' +
-                       repr(iteration) + '.pth')
+            #  torch.save(ssd_net.state_dict(), 'weights/ssd300_0712_' +
+            #             repr(iteration) + '.pth')
+            torch.save(ssd_net.state_dict(), 'weights/ssd{}_0712_{}.pth'.format(
+                args.size, iteration
+            ))
     torch.save(ssd_net.state_dict(), args.save_folder + '' + args.version + '.pth')
 
 
