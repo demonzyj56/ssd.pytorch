@@ -62,3 +62,30 @@ v1 = {
 
     'name' : 'v1',
 }
+
+# Configs for ssd300_resnet101.
+res101_300 = {
+    'feature_maps' : [38, 10, 5, 3, 2, 1],     # commented by Wang: strange here
+
+    'min_dim' : 300,
+
+    'steps' : [8, 32, 64, 100, 150, 300],
+
+    'min_sizes' : [30, 60, 114, 168, 222, 276],
+
+    'max_sizes' : [-1, 114, 168, 222, 276, 330],
+
+    # 'aspect_ratios' : [[2, 1/2], [2, 1/2, 3, 1/3], [2, 1/2, 3, 1/3],
+    #                    [2, 1/2, 3, 1/3], [2, 1/2], [2, 1/2]],
+    'aspect_ratios' : [[2], [2, 3], [2, 3], [2, 3], [2, 3], [2, 3]],
+
+    'variance' : [0.1, 0.2],
+
+    'clip' : True,
+
+    'name' : 'res101_300',
+
+    # added by Wang: hyperparam. of elm
+    'elm_params':['linear', 10**1, 500, True],
+
+}
