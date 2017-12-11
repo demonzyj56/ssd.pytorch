@@ -1,2 +1,2 @@
-from imdb import IMDB
-from imagenet_vid import ImageNetVID
+from .imdb import IMDB
+from .imagenet_vid import ImageNetVID

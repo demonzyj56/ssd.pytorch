@@ -13,7 +13,7 @@ This file has functions about generating bounding box regression targets
 
 import numpy as np
 
-from bbox_transform import bbox_overlaps, bbox_transform
+from .bbox_transform import bbox_overlaps, bbox_transform
 
 
 def compute_bbox_regression_targets(rois, overlaps, labels, cfg):
