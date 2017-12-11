@@ -10,7 +10,10 @@ basic format [image_index]
 """
 
 import os
-import cPickle
+try:
+    import cPickle
+except:
+    from six.moves import cPickle
 import numpy as np
 from PIL import Image
 from vid.bbox.bbox_transform import bbox_overlaps
