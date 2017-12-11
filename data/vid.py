@@ -10,6 +10,12 @@ class VIDDetection(torch.utils.data.Dataset):
 
     def __init__(self, image_set, root_path, dataset_path, result_path=None,
                  transform=None, dataset_name='ImageNetVID'):
+        """ Args:
+            image_set: image set to use, which should correspond to txt files in
+            data/.
+            root_path: root path store cache and proposal data
+            dataset_path: dataset path store images and image lists
+        """
         image_sets = [iset for iset in image_set.split('+')]
         roidbs = [load_gt_roidb(dataset_name, iset, root_path, dataset_path,
                                 result_path, flip=False) for iset in image_sets]
