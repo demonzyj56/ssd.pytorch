@@ -12,9 +12,11 @@ class VIDDetection(torch.utils.data.Dataset):
                  transform=None, dataset_name='ImageNetVID'):
         """ Args:
             image_set: image set to use, which should correspond to txt files in
-            data/.
+            data/, joined by '+'.
             root_path: root path store cache and proposal data
             dataset_path: dataset path store images and image lists
+            result_path: result path store results files.  If None, then set to
+            root_path/cache/.
         """
         image_sets = [iset for iset in image_set.split('+')]
         roidbs = [load_gt_roidb(dataset_name, iset, root_path, dataset_path,
@@ -43,3 +45,7 @@ class VIDDetection(torch.utils.data.Dataset):
             target = np.hstack((boxes, np.expand_dims(labels, axis=1)))
         return torch.from_numpy(img).permute(2, 0, 1), target, roi_rec['frame_id']
 
+
+if __name__ == "__main__":
+    vid_det = VIDDetection('DET_train_30classes+VID_train_15frames', 'data/', '/home/leoyolo/research/data/ILSVRC')
+    from IPython import embed; embed()
