@@ -1,4 +1,5 @@
 """ ImagenNetVID loader for pytorch. """
+import numpy as np
 import cv2
 import torch.utils.data
 from vid.utils.load_data import load_gt_roidb, merge_roidb
@@ -32,9 +33,7 @@ class VIDDetection(torch.utils.data.Dataset):
 
     def pull_item(self, index):
         """ Mimic VOCDetection.
-        TODO(leoyolo): the gt_roidb given by IMDB has the following problem:
-            - boxes coordinates are in absolute ones instead of fractional coordinates (i.e. not divided by height/width).
-            - boxes and labels have different data types in numpy.
+            Note that roi['gt_classes'] is np.int32 but seem to have no effect.
         """
         roi_rec = self.gt_roidb[index]
         img = cv2.imread(roi_rec['image'], cv2.IMREAD_COLOR)
@@ -46,5 +45,7 @@ class VIDDetection(torch.utils.data.Dataset):
 
 
 if __name__ == "__main__":
-    vid_det = VIDDetection('DET_train_30classes+VID_train_15frames', 'data/', '/home/leoyolo/research/data/ILSVRC')
+    from utils.augmentations import SSDAugmentation
+    vid_det = VIDDetection('DET_train_30classes+VID_train_15frames', 'data/', '/home/leoyolo/research/data/ILSVRC',
+                           transform=SSDAugmentation())
     from IPython import embed; embed()

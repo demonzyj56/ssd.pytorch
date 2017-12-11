@@ -114,7 +114,9 @@ class ImageNetVID(IMDB):
 
     def load_vid_annotation(self, iindex):
         """
-        for a given index, load image and bounding boxes info from XML file
+        for a given index, load image and bounding boxes info from XML file.
+        Note that I modify the coordinates of the bounding boxes to normalize
+        them between 0 and 1.
         :param index: index of a specific image
         :return: record['boxes', 'gt_classes', 'gt_overlaps', 'flipped']
         """
@@ -144,7 +146,7 @@ class ImageNetVID(IMDB):
         objs = tree.findall('object')
         num_objs = len(objs)
 
-        boxes = np.zeros((num_objs, 4), dtype=np.uint16)
+        boxes = np.zeros((num_objs, 4), dtype=np.float32)
         gt_classes = np.zeros((num_objs), dtype=np.int32)
         overlaps = np.zeros((num_objs, self.num_classes), dtype=np.float32)
         valid_objs = np.zeros((num_objs), dtype=np.bool)
@@ -153,11 +155,11 @@ class ImageNetVID(IMDB):
         # Load object bounding boxes into a data frame.
         for ix, obj in enumerate(objs):
             bbox = obj.find('bndbox')
-            # Make pixel indexes 0-based
-            x1 = np.maximum(float(bbox.find('xmin').text), 0)
-            y1 = np.maximum(float(bbox.find('ymin').text), 0)
-            x2 = np.minimum(float(bbox.find('xmax').text), roi_rec['width']-1)
-            y2 = np.minimum(float(bbox.find('ymax').text), roi_rec['height']-1)
+            # Make pixel indexes 0-based, and normalize
+            x1 = np.maximum(float(bbox.find('xmin').text), 0) / roi_rec['width']
+            y1 = np.maximum(float(bbox.find('ymin').text), 0) / roi_rec['height']
+            x2 = np.minimum(float(bbox.find('xmax').text), roi_rec['width']-1) / roi_rec['width']
+            y2 = np.minimum(float(bbox.find('ymax').text), roi_rec['height']-1) / roi_rec['height']
             if not obj.find('name').text in class_to_index.keys():
                 continue
             valid_objs[ix] = True
