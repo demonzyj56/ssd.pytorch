@@ -11,7 +11,7 @@ given a imagenet vid imdb, compute mAP
 
 import numpy as np
 import os
-import cPickle
+from six.moves import cPickle
 
 
 def parse_vid_rec(filename, classhash, img_ids, defaultIOUthr=0.5, pixelTolerance=10):
@@ -89,8 +89,8 @@ def vid_eval(detpath, annopath, imageset_file, classname_map, annocache, ovthres
         for ind, image_filename in enumerate(img_basenames):
             recs.append(parse_vid_rec(annopath.format('VID/' + image_filename), classhash, gt_img_ids[ind]))
             if ind % 100 == 0:
-                print 'reading annotations for {:d}/{:d}'.format(ind + 1, len(img_basenames))
-        print 'saving annotations cache to {:s}'.format(annocache)
+                print('reading annotations for {:d}/{:d}'.format(ind + 1, len(img_basenames)))
+        print('saving annotations cache to {:s}'.format(annocache))
         with open(annocache, 'wb') as f:
             cPickle.dump(recs, f, protocol=cPickle.HIGHEST_PROTOCOL)
     else:
@@ -175,7 +175,7 @@ def vid_eval(detpath, annopath, imageset_file, classname_map, annocache, ovthres
                 bi=[np.max((bb[0],bbgt[0])), np.max((bb[1],bbgt[1])), np.min((bb[2],bbgt[2])), np.min((bb[3],bbgt[3]))]
                 iw=bi[2]-bi[0]+1
                 ih=bi[3]-bi[1]+1
-                if iw>0 and ih>0:            
+                if iw>0 and ih>0:
                     # compute overlap as area of intersection / area of union
                     ua = (bb[2] - bb[0] + 1.) * (bb[3] - bb[1] + 1.) + \
                            (bbgt[2] - bbgt[0] + 1.) * \

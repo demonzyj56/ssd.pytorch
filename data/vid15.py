@@ -1,7 +1,6 @@
 """ ImagenNetVID loader for pytorch. """
 import cv2
 import torch.utils.data
-from vid.dataset import ImageNetVID
 from vid.utils.load_data import load_gt_roidb, merge_roidb
 
 
