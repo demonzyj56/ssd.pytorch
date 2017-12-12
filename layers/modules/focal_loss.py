@@ -1,11 +1,13 @@
 """ Focal Loss for Dense Object Detection.
 This is a PyTorch implementation of focal_loss layer. """
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 from data import v2 as cfg
 from ..box_utils import match, log_sum_exp
+
 
 class FocalLoss(nn.Module):
 
@@ -17,10 +19,10 @@ class FocalLoss(nn.Module):
     def forward(self, input, target):
         """ Assumes that input is a two-dim blob where the first dimension
         contains all samples. """
-        log_pt = F.log_softmax(input)
+        log_pt = F.log_softmax(input, dim=1)
         log_pt = log_pt.gather(1, target).view(-1)
         pt = log_pt.exp()
-        loss = -self.alpha * (1-pt)**self.gamma * log_pt
+        loss = -self.alpha * torch.pow(1-pt, self.gamma) * log_pt
 
         return loss.sum()
 
@@ -51,12 +53,6 @@ class MultiBoxFocalLoss(nn.Module):
         self.use_gpu = use_gpu
         self.num_classes = num_classes
         self.threshold = overlap_thresh
-        # self.background_label = bkg_label
-        # self.encode_target = encode_target
-        # self.use_prior_for_matching = prior_for_matching
-        # self.do_neg_mining = neg_mining
-        # self.negpos_ratio = neg_pos
-        # self.neg_overlap = neg_overlap
         self.variance = cfg['variance']
         self.focal_loss = FocalLoss(gamma=gamma, alpha=alpha)
 
@@ -76,7 +72,6 @@ class MultiBoxFocalLoss(nn.Module):
         num = loc_data.size(0)
         priors = priors[:loc_data.size(1), :]
         num_priors = (priors.size(0))
-        # num_classes = self.num_classes
 
         # match priors (default boxes) and ground truth boxes
         loc_t = torch.Tensor(num, num_priors, 4)
@@ -95,7 +90,6 @@ class MultiBoxFocalLoss(nn.Module):
         conf_t = Variable(conf_t, requires_grad=False)
 
         pos = conf_t > 0
-        num_pos = pos.sum(keepdim=True)
 
         # Localization Loss (Smooth L1)
         # Shape: [batch,num_priors,4]
@@ -107,30 +101,10 @@ class MultiBoxFocalLoss(nn.Module):
 
         loss_c = self.focal_loss(conf_data.view(-1, self.num_classes),
                                  conf_t.view(-1, 1))
-        # Compute max conf across batch for hard negative mining
-        # batch_conf = conf_data.view(-1, self.num_classes)
-        #
-        # loss_c = log_sum_exp(batch_conf) - batch_conf.gather(1, conf_t.view(-1, 1))
-        #
-        # # Hard Negative Mining
-        # loss_c[pos] = 0  # filter out pos boxes for now
-        # loss_c = loss_c.view(num, -1)
-        # _, loss_idx = loss_c.sort(1, descending=True)
-        # _, idx_rank = loss_idx.sort(1)
-        # num_pos = pos.long().sum(1, keepdim=True)
-        # num_neg = torch.clamp(self.negpos_ratio*num_pos, max=pos.size(1)-1)
-        # neg = idx_rank < num_neg.expand_as(idx_rank)
-        #
-        # # Confidence Loss Including Positive and Negative Examples
-        # pos_idx = pos.unsqueeze(2).expand_as(conf_data)
-        # neg_idx = neg.unsqueeze(2).expand_as(conf_data)
-        # conf_p = conf_data[(pos_idx+neg_idx).gt(0)].view(-1, self.num_classes)
-        # targets_weighted = conf_t[(pos+neg).gt(0)]
-        # loss_c = F.cross_entropy(conf_p, targets_weighted, size_average=False)
 
         # Sum of losses: L(x,c,l,g) = (Lconf(x, c) + αLloc(x,l,g)) / N
 
-        N = num_pos.data.sum()
+        N = pos.data.sum()
         loss_l /= N
         loss_c /= N
         return loss_l, loss_c

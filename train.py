@@ -186,6 +186,7 @@ def train():
         loss_l, loss_c = criterion(out, targets)
         loss = loss_l + loss_c
         loss.backward()
+        nn.utils.clip_grad_norm(net.parameters(), 5)
         optimizer.step()
         t1 = time.time()
         loc_loss += loss_l.data[0]
