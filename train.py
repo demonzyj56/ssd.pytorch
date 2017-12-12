@@ -107,8 +107,8 @@ if not args.resume:
 
 optimizer = optim.SGD(net.parameters(), lr=args.lr,
                       momentum=args.momentum, weight_decay=args.weight_decay)
-# criterion = MultiBoxLoss(num_classes, 0.5, True, 0, True, 3, 0.5, False, args.cuda)
-criterion = MultiBoxFocalLoss(num_classes, 0.5, 2, 0.25, args.cuda)
+criterion = MultiBoxLoss(num_classes, 0.5, True, 0, True, 3, 0.5, False, args.cuda)
+#  criterion = MultiBoxFocalLoss(num_classes, 0.5, 2, 0.25, args.cuda)
 
 def train():
     net.train()
@@ -186,7 +186,8 @@ def train():
         loss_l, loss_c = criterion(out, targets)
         loss = loss_l + loss_c
         loss.backward()
-        nn.utils.clip_grad_norm(net.parameters(), 5)
+        if isinstance(loss, MultiBoxFocalLoss):
+            nn.utils.clip_grad_norm(net.parameters(), 5)
         optimizer.step()
         t1 = time.time()
         loc_loss += loss_l.data[0]
