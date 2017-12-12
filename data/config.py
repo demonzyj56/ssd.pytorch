@@ -7,6 +7,7 @@ ddir = os.path.join(home,"data/VOCdevkit/")
 
 # note: if you used our download scripts, this should be right
 VOCroot = ddir # path to VOCdevkit root dir
+VIDroot = os.path.join(home, 'data', 'ILSVRC')
 
 # default batch size
 BATCHES = 32

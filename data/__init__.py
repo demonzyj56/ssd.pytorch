@@ -1,4 +1,5 @@
 from .voc0712 import VOCDetection, AnnotationTransform, detection_collate, VOC_CLASSES
+from .vid15 import VIDDetection, VID_CLASSES
 from .config import *
 import cv2
 import numpy as np
