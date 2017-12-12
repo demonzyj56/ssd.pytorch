@@ -3,13 +3,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 from layers import *
-from data import res101_300, VOC_CLASSES
+from data import res101_300_v2, VOC_CLASSES
 import os
 import torchvision.models as models
-from .resnet_modified import resnet101_no_fc
+from .resnet_modified import resnet101_no_fc_v2
 
 
-config = res101_300
+config = res101_300_v2
 
 
 class SSD_res(nn.Module):
@@ -74,7 +74,8 @@ class SSD_res(nn.Module):
         conf = list()
 
         # apply res101 and yield outputs from layer2 and layer4
-        map1, x = self.res101(x)
+        map0, map1, x = self.res101(x)
+        sources.append(map0)
         sources.append(map1)
         sources.append(x)
 
@@ -86,7 +87,8 @@ class SSD_res(nn.Module):
             else:
                 x = F.relu(v(x), inplace=True)
             if k % 2 == 1 or k==len(self.extras)-1:
-                sources.append(x)
+                if k != 5:
+                    sources.append(x)
 
         # apply multibox head to source layers
         for (x, l, c) in zip(sources, self.loc, self.conf):
@@ -149,17 +151,22 @@ def multibox(res101, extra_layers, cfg, num_classes):
                                  cfg[0] * 4, kernel_size=3, padding=1)]
     conf_layers += [nn.Conv2d(res101.layer2[-1].conv3.out_channels,
                               cfg[0] * num_classes, kernel_size=3, padding=1)]
-    loc_layers += [nn.Conv2d(res101.layer4[-1].conv3.out_channels,
+    loc_layers += [nn.Conv2d(res101.layer3[-1].conv3.out_channels,
                              cfg[1] * 4, kernel_size=3, padding=1)]
-    conf_layers += [nn.Conv2d(res101.layer4[-1].conv3.out_channels,
+    conf_layers += [nn.Conv2d(res101.layer3[-1].conv3.out_channels,
                               cfg[1] * num_classes, kernel_size=3, padding=1)]
+    loc_layers += [nn.Conv2d(res101.layer4[-1].conv3.out_channels,
+                             cfg[2] * 4, kernel_size=3, padding=1)]
+    conf_layers += [nn.Conv2d(res101.layer4[-1].conv3.out_channels,
+                              cfg[2] * num_classes, kernel_size=3, padding=1)]
 
     # extra layers
-    for k, v in enumerate(extra_layers[1::2], 2):
-        loc_layers += [nn.Conv2d(v[0].out_channels, cfg[k]
-                                 * 4, kernel_size=3, padding=1)]
-        conf_layers += [nn.Conv2d(v[0].out_channels, cfg[k]
-                                  * num_classes, kernel_size=3, padding=1)]
+    for k, v in enumerate(extra_layers[1::2], 3):
+        if k!= 5:
+            loc_layers += [nn.Conv2d(v[0].out_channels, cfg[k]
+                                     * 4, kernel_size=3, padding=1)]
+            conf_layers += [nn.Conv2d(v[0].out_channels, cfg[k]
+                                      * num_classes, kernel_size=3, padding=1)]
     # for the final pooling layer
     loc_layers += [nn.Conv2d(extra_layers[-2][0].out_channels, cfg[-1]
                              * 4, kernel_size=3, padding=1)]
@@ -182,10 +189,10 @@ extras = {
     '300': [256, 512, 256, 512, 256, 512]
 }
 mbox = {
-    # '300': [4, 6, 6, 6, 4, 4],  # number of boxes per feature map location
+    '300': [4, 6, 6, 6, 4, 4],  # number of boxes per feature map location
 
     '512': [],
-    '300': [3, 6, 6, 6, 6, 6]
+    # '300': [3, 6, 6, 6, 6, 6]
 }
 
 
@@ -200,7 +207,7 @@ def build_ssd(phase, size=300, num_classes=21):
         print("Error: Sorry only SSD300 or SSD300_101 are supported currently!")
         return
 
-    return SSD_res(phase, *multibox(resnet101_no_fc(),
+    return SSD_res(phase, *multibox(resnet101_no_fc_v2(),
                    add_extras(2048),
                    mbox[str(size)], num_classes), num_classes, size)
 

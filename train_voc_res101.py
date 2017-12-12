@@ -7,10 +7,10 @@ import torch.nn.init as init
 import argparse
 from torch.autograd import Variable
 import torch.utils.data as data
-from data import res101_300, v2, v1, AnnotationTransform, VOCDetection, detection_collate, VOCroot, VOC_CLASSES
+from data import res101_300, res101_300_v2, v2, v1, AnnotationTransform, VOCDetection, detection_collate, VOCroot, VOC_CLASSES
 from utils.augmentations import SSDAugmentation
 from layers.modules import MultiBoxLoss
-from resnet101.ssd_resnet import build_ssd
+from resnet101.ssd_resnetv2 import build_ssd
 import numpy as np
 import time
 
@@ -18,7 +18,7 @@ def str2bool(v):
     return v.lower() in ("yes", "true", "t", "1")
 
 parser = argparse.ArgumentParser(description='Single Shot MultiBox Detector Training')
-parser.add_argument('--version', default=res101_300['name'], help='conv11_2(v2) or pool6(v1) as last layer')
+parser.add_argument('--version', default=res101_300_v2['name'], help='conv11_2(v2) or pool6(v1) as last layer')
 parser.add_argument('--basenet', default='resnet101_no_fc.pth', help='pretrained base model')
 parser.add_argument('--jaccard_threshold', default=0.5, type=float, help='Min Jaccard index for matching')
 parser.add_argument('--batch_size', default=32, type=int, help='Batch size for training')
@@ -27,7 +27,7 @@ parser.add_argument('--num_workers', default=4, type=int, help='Number of worker
 parser.add_argument('--iterations', default=60000, type=int, help='Number of training iterations')
 parser.add_argument('--start_iter', default=0, type=int, help='Begin counting iterations starting from this value (should be used with resume)')
 parser.add_argument('--cuda', default=True, type=str2bool, help='Use cuda to train model')
-parser.add_argument('--lr', '--learning-rate', default=1e-3, type=float, help='initial learning rate')
+parser.add_argument('--lr', '--learning-rate', default=4e-4, type=float, help='initial learning rate')
 parser.add_argument('--momentum', default=0.9, type=float, help='momentum')
 parser.add_argument('--weight_decay', default=5e-4, type=float, help='Weight decay for SGD')
 parser.add_argument('--gamma', default=0.1, type=float, help='Gamma update for SGD')
@@ -43,7 +43,7 @@ if args.cuda and torch.cuda.is_available():
 else:
     torch.set_default_tensor_type('torch.FloatTensor')
 
-cfg = res101_300
+cfg = res101_300_v2
 
 if not os.path.exists(args.save_folder):
     os.mkdir(args.save_folder)
@@ -215,7 +215,7 @@ def train():
                 )
         if iteration % 5000 == 0:
             print('Saving state, iter:', iteration)
-            torch.save(ssd_net.state_dict(), 'weights/ssd300_0712_{}_{}.pth'.format(
+            torch.save(ssd_net.state_dict(), 'weights/ssd300_0712_resv2_{}_{}.pth'.format(
                 cfg['name'], iteration
             ))
     torch.save(ssd_net.state_dict(), args.save_folder + '' + args.version + '.pth')
