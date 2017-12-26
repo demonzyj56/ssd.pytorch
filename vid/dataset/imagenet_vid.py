@@ -68,7 +68,9 @@ class ImageNetVID(IMDB):
         find out which indexes correspond to given image set (train or val)
         :return:
         """
-        image_set_index_file = os.path.join(self.data_path, 'ImageSets', self.image_set + '.txt')
+        # Note that for simplicity we put image set list on root_path instead of data_path.
+        # Example: '/home/elmisgood/Desktop/ssd.pytorch.vid/data/{:s}.txt'.format(self.image_set)
+        image_set_index_file = os.path.join(self.root_path, '{}.txt'.format(self.image_set))
         assert os.path.exists(image_set_index_file), 'Path does not exist: {}'.format(image_set_index_file)
         with open(image_set_index_file) as f:
             lines = [x.strip().split(' ') for x in f.readlines()]
