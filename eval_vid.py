@@ -24,7 +24,7 @@ def str2bool(v):
     return v.lower() in ("yes", "true", "t", "1")
 
 parser = argparse.ArgumentParser(description='Single Shot MultiBox Detection')
-parser.add_argument('--trained_model', default='weights/v2.pth',
+parser.add_argument('--trained_model', default='weights/v2_512.pth',
                     type=str, help='Trained state_dict file path to open')
 parser.add_argument('--save_folder', default='eval/', type=str,
                     help='File path to save results')
@@ -35,9 +35,9 @@ parser.add_argument('--top_k', default=5, type=int,
 parser.add_argument('--cuda', default=True, type=str2bool,
                     help='Use cuda to train model')
 parser.add_argument('--vid_root', default=VIDroot, help='Location of VID root directory')
-parser.add_argument('--vid_val_list', default='VID_val_frames_short',
+parser.add_argument('--vid_val_list', default='VID_val_frames',
                     help='validation files found in ${vid_root}/${vid_val_list}.txt')
-parser.add_argument('--size', default=300, type=int, help='Which size to use (300/512)')
+parser.add_argument('--size', default=512, type=int, help='Which size to use (300/512)')
 
 args = parser.parse_args()
 
