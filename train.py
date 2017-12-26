@@ -186,7 +186,7 @@ def train():
         loss_l, loss_c = criterion(out, targets)
         loss = loss_l + loss_c
         loss.backward()
-        if isinstance(loss, MultiBoxFocalLoss):
+        if isinstance(criterion, MultiBoxFocalLoss):
             nn.utils.clip_grad_norm(net.parameters(), 5)
         optimizer.step()
         t1 = time.time()
