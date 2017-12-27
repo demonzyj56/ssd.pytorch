@@ -99,6 +99,7 @@ class MultiBoxLoss(nn.Module):
         num_pos = pos.long().sum(1, keepdim=True)
         num_neg = torch.clamp(self.negpos_ratio * num_pos, max=pos.size(1) - 1)
 
+        # Some guards
         if all(num_pos.data.view(-1)>0):
             pass
         else:
@@ -113,12 +114,7 @@ class MultiBoxLoss(nn.Module):
         # Confidence Loss Including Positive and Negative Examples
         pos_idx = pos.unsqueeze(2).expand_as(conf_data)
         neg_idx = neg.unsqueeze(2).expand_as(conf_data)
-        try:
-            conf_p = conf_data[(pos_idx+neg_idx).gt(0)].view(-1, self.num_classes)
-        except:
-            print(conf_data)
-            print(pos_idx)
-            print(neg_idx)
+        conf_p = conf_data[(pos_idx+neg_idx).gt(0)].view(-1, self.num_classes)
         targets_weighted = conf_t[(pos+neg).gt(0)]
         loss_c = F.cross_entropy(conf_p, targets_weighted, size_average=False)
 
