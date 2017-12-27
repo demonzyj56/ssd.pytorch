@@ -139,8 +139,11 @@ class ImageNetVID(IMDB):
 
         if self.det_vid == 'DET':
             filename = os.path.join(self.data_path, 'Annotations', 'DET', index + '.xml')
+            # Add entry to determine whether it is from det or not
+            roi_rec['det'] = True
         else:
             filename = os.path.join(self.data_path, 'Annotations', 'VID', index + '.xml')
+            roi_rec['det'] = False
 
         tree = ET.parse(filename)
         size = tree.find('size')
