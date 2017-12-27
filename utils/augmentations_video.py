@@ -715,6 +715,14 @@ class PhotometricDistort_video(object):
         return self.rand_light_noise(im, boxes, labels)
 
 
+class RandomReverse_video(object):
+    """ Randomly reverse the sequence of the video sequences. """
+    def __call__(self, images, boxes=None, labels=None):
+        """ images is a list of images. """
+        imgs = images[::-1] if random.randint(2) else images
+        return imgs, boxes, labels
+
+
 class SSDAugmentation(object):
     def __init__(self, size=300, mean=(104, 117, 123)):
         self.mean = mean
