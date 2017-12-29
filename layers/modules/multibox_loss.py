@@ -25,12 +25,14 @@ class MultiBoxLoss(nn.Module):
             l: predicted boxes,
             g: ground truth boxes
             N: number of matched default boxes
+            size_average: whether to average the output loss by N.  If not,
+            then return N at the last position.
         See: https://arxiv.org/pdf/1512.02325.pdf for more details.
     """
 
     def __init__(self, num_classes, overlap_thresh, prior_for_matching,
                  bkg_label, neg_mining, neg_pos, neg_overlap, encode_target,
-                 use_gpu=True):
+                 use_gpu=True, size_average=True):
         super(MultiBoxLoss, self).__init__()
         self.use_gpu = use_gpu
         self.num_classes = num_classes
@@ -41,6 +43,7 @@ class MultiBoxLoss(nn.Module):
         self.do_neg_mining = neg_mining
         self.negpos_ratio = neg_pos
         self.neg_overlap = neg_overlap
+        self.size_average = size_average
         self.variance = cfg['variance']
 
     def forward(self, predictions, targets):
@@ -121,6 +124,9 @@ class MultiBoxLoss(nn.Module):
         # Sum of losses: L(x,c,l,g) = (Lconf(x, c) + αLloc(x,l,g)) / N
 
         N = num_pos.data.sum()
-        loss_l /= N
-        loss_c /= N
-        return loss_l, loss_c
+
+        if self.size_average:
+            return loss_l/N, loss_c/N
+        else:
+            return loss_l, loss_c, N
+
