@@ -38,6 +38,8 @@ parser.add_argument('--visdom', default=False, type=str2bool, help='Use visdom t
 parser.add_argument('--send_images_to_visdom', type=str2bool, default=False, help='Sample a random image from each 10th batch, send it to visdom after augmentations step')
 parser.add_argument('--save_folder', default='weights/', help='Location to save checkpoint models')
 parser.add_argument('--voc_root', default=VOCroot, help='Location of VOC root directory')
+parser.add_argument('--train_files', default='DET_train_30classes+VID_train_15frames', type=str,
+                    help='Train sets to look up in data/, joined by +')
 args = parser.parse_args()
 
 if args.cuda and torch.cuda.is_available():
@@ -51,8 +53,8 @@ cfg = v2_512 if args.version == 'v2_512' else v2
 if not os.path.exists(args.save_folder):
     os.mkdir(args.save_folder)
 
-train_sets = ['DET_train_30classes','VID_train_15frames']
-
+# train_sets = ['DET_train_30classes','VID_train_15frames']
+train_sets = args.train_files.split('+')
 ssd_dim = args.size
 means = (104, 117, 123)  # only support voc now
 num_classes = len(VID_CLASSES) + 1
