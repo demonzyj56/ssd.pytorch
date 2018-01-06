@@ -1,6 +1,7 @@
 """ Create various training txt files for VID. """
 import os
 import numpy as np
+from datetime import datetime
 from data import VIDroot
 
 
@@ -36,7 +37,9 @@ def random_train_frames(num_sampled):
     each training sequences."""
     with open('data/VID_train_videos.txt', 'r') as f:
         lines = [x.strip().split(' ') for x in f.readlines()]
-    filename = "data/VID_train_random_{:d}frames.txt".format(num_sampled)
+    filename = "data/VID_train_random_{:d}frames_{:%Y%m%d_%H%M%S}.txt".format(
+        num_sampled, datetime.now()
+    )
     with open(filename, 'wt') as f:
         for line in lines:
             file_path, num_frames = line[0], int(line[-1])
