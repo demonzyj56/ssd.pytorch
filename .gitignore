@@ -109,6 +109,7 @@ templates/
 data/ssd_dataloader.py
 data/datasets/
 data/cache/
+data/visualization/
 doc/visualize.py
 read_results.py
 ssd300_120000/
