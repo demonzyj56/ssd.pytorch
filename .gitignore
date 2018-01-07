@@ -117,7 +117,11 @@ ssd512_120000/
 demos/live
 webdemo.py
 test_data_aug.py
-*.txt
+
+
+# *.txt
+data/VID_val_frames_*
+results.txt
 
 # attributes
 
