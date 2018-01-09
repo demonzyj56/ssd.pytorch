@@ -135,24 +135,13 @@ def prediction_module(inplanes):
     return Bottleneck(inplanes=inplanes, planes=256, downsample=downsample)
 
 
-def extra_block_conv_bn_relu(inchannels, channels1x1, channels3x3):
-    return nn.Sequential(
-        nn.Conv2d(inchannels, channels1x1, kernel_size=1, stride=1, padding=0),
-        nn.BatchNorm2d(channels1x1),
-        nn.ReLU(),
-        nn.Conv2d(channels1x1, channels3x3, kernel_size=3, stride=2, padding=1),
-        nn.BatchNorm2d(channels3x3),
-        nn.ReLU()
-    )
-
-
-def extra_block_bottleneck(inchannels, outchannels):
+def extra_block_bottleneck(inchannels, outchannels, stride):
     downsample = nn.Sequential(
-        nn.Conv2d(inchannels, outchannels, kernel_size=1, stride=2, bias=False),
+        nn.Conv2d(inchannels, outchannels, kernel_size=1, stride=stride, bias=False),
         nn.BatchNorm2d(outchannels)
     )
     return Bottleneck(inplanes=inchannels, planes=outchannels//Bottleneck.expansion,
-                      downsample=downsample)
+                      stride=stride, downsample=downsample)
 
 
 resnet101_config = {
@@ -170,7 +159,19 @@ resnet101_config = {
     },
     512: {
         'mbox': [4, 6, 6, 6, 6, 4, 4],
-        'feature_maps': [64, 32, 16, 8, 4, 2, 1]
+        'feature_maps': [64, 32, 16, 8, 4, 2, 1],
+        'min_dim': 512,
+        'steps': [8, 16, 32, 64, 128, 256, 512],
+        'min_sizes': [35.84, 76.8, 153.6, 230.4, 307.2, 384.0, 460.8],
+        'max_sizes': [76.8, 153.6, 230.4, 307.2, 384.0, 460.8, 537.6],
+
+        'aspect_ratios' : [[2], [2, 3], [2, 3], [2, 3], [2, 3], [2], [2]],
+
+        'variance' : [0.1, 0.2],
+
+        'clip' : True,
+
+        'name' : 'ssd512_resnet101',
     }
 }
 
@@ -178,9 +179,11 @@ resnet101_config = {
 class SSDResNet101(nn.Module):
     """ Resnet101 version of SSD network. """
 
-    def __init__(self, phase, num_classes, size=320, extra_block='conv_bn_relu',
+    def __init__(self, phase, num_classes, size=512,
                  top_k=200, conf_thresh=0.01, nms_thresh=0.45):
+        assert size == 512, "Only support input size 512 for now"
         super(SSDResNet101, self).__init__()
+        self.phase = phase
         self.num_classes = num_classes
         self.size = size
         self.cfg = resnet101_config[size]
@@ -188,23 +191,13 @@ class SSDResNet101(nn.Module):
         self.priors = Variable(self.priorbox.forward(), volatile=True)
 
         self.resnet101 = resnet101_atrous_reduced(pretrained=True)
-        # TODO(leoyolo): modify extras so that they fit spatial size of each layer
-        if extra_block == 'conv_bn_relu':
-            self.extras = nn.ModuleList([
-                extra_block_conv_bn_relu(x, 256, 512) for x in [2048, 512, 512, 512]
-            ])
-            self.prediction_module = nn.ModuleList([
-                prediction_module(x) for x in [512, 2048, 512, 512, 512, 512]
-            ])
-        elif extra_block == 'bottleneck':
-            self.extras = nn.ModuleList([
-                extra_block_bottleneck(x, 1024) for x in [2048, 1024, 1024, 1024]
-            ])
-            self.prediction_module = nn.ModuleList([
-                prediction_module(x) for x in [512, 2048, 1024, 1024, 1024, 1024]
-            ])
-        else:
-            raise ValueError("Unknown extra block type: {}".format(extra_block))
+        self.extras = nn.ModuleList([
+            extra_block_bottleneck(x, 1024, s) for x, s in \
+                zip([2048, 1024, 1024, 1024, 1024], [2, 2, 2, 2, 1])
+        ])
+        self.prediction_module = nn.ModuleList([
+            prediction_module(x) for x in [512, 2048, 1024, 1024, 1024, 1024, 1024]
+        ])
         self.loc = nn.ModuleList([
             nn.Conv2d(1024, x*4, kernel_size=3, padding=1) for x in self.cfg['mbox']
         ])
@@ -217,13 +210,9 @@ class SSDResNet101(nn.Module):
             self.detect = Detect(num_classes, 0, top_k, conf_thresh, nms_thresh)
 
     def forward(self, x):
-        sources = list()
         loc = list()
         conf = list()
-        sources += self.resnet101(x)
-        # extras
-        for extra in self.extras:
-            sources.append(extra(sources[-1]))
+        sources = self.sources(x)
 
         # apply multibox head to source layers
         for (x, p, l, c) in zip(sources, self.prediction_module, self.loc, self.conf):
@@ -247,6 +236,12 @@ class SSDResNet101(nn.Module):
             )
         return output
 
+    def sources(self, x):
+        sources = list(self.resnet101(x))
+        for extra in self.extras:
+            sources.append(extra(sources[-1]))
+        return sources
+
     def load_weights(self, base_file):
         import os
         assert os.path.exists(base_file), "Model file {} does not exist".format(base_file)
@@ -259,8 +254,7 @@ class SSDResNet101(nn.Module):
 if __name__ == '__main__':
     import torch
     from torch.autograd import Variable
-    resnet101 = resnet101_atrous_reduced(pretrained=True)
     a = Variable(torch.randn(1, 3, 512, 512))
-    sources = []
-    sources += resnet101(a)
-    print(sources)
+    net = SSDResNet101('train', 21)
+    b = net(a)
+    from IPython import embed; embed()
