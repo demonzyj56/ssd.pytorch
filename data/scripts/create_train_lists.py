@@ -2,7 +2,7 @@
 import os
 import numpy as np
 from datetime import datetime
-from data import VIDroot
+from data import VIDroot, VID_CLASSES
 
 
 def create_train_video_list():
@@ -48,5 +48,47 @@ def random_train_frames(num_sampled):
                 f.write('{:s} 1 {:d} {:d}\n'.format(file_path, idx, num_frames))
 
 
+def random_train_file():
+    with open('data/VID_train_videos.txt', 'r') as f:
+        lines = [x.strip().split(' ') for x in f.readlines()]
+    rand_seq = np.random.randint(len(lines))
+    selected = lines[rand_seq]
+    seq_number = int(selected[-1])
+    seq_name = 'VID_train_seq_{}'.format(rand_seq)
+    with open('data/{}.txt'.format(seq_name), 'wt') as f:
+        for i in range(seq_number):
+            f.write('{:s} 1 {:d} {:d}\n'.format(
+                selected[0], i, seq_number
+            ))
+    print('Done generating {}, number of frames: {}'.format(seq_name, seq_number))
+    return seq_name
+
+
+def train_list_by_class(name):
+
+    def class_name_to_id(class_name):
+        assert class_name in VID_CLASSES
+        for idx, name in enumerate(VID_CLASSES):
+            if name == class_name:
+                return idx
+
+    id = class_name_to_id(name) + 1
+    with open(os.path.join(VIDroot, 'ImageSets', 'VID', 'train_{}.txt'.format(id)), 'r') as f:
+        video_names = [x.strip().split(' ')[0] for x in f.readlines()]
+    video_names = ['train/{}'.format(n) for n in video_names if not n.startswith('ILSVRC2017')]
+    with open(os.path.join('data', 'VID_train_videos.txt'), 'r') as f:
+        lines = [x.strip().split(' ') for x in f.readlines()]
+        names_to_frames = dict([(line[0], int(line[-1])) for line in lines])
+    with open('data/VID_train_frames_{}.txt'.format(name), 'wt') as f:
+        for video_name in video_names:
+            frames = names_to_frames[video_name]
+            for idx in range(frames):
+                f.write('{:s} 1 {:d} {:d}\n'.format(video_name, idx, frames))
+
+    return 'VID_train_frames_{}'.format(name)
+
+
 if __name__ == '__main__':
-    random_train_frames(15)
+    for class_name in VID_CLASSES:
+        print('Creating {}'.format(class_name))
+        train_list_by_class(class_name)
