@@ -251,6 +251,10 @@ class SSDResNet101(nn.Module):
         print('Finished!')
 
 
+def build_ssd(phase, size=300, num_classes=21):
+    return SSDResNet101(phase=phase, num_classes=num_classes, size=size)
+
+
 if __name__ == '__main__':
     import torch
     from torch.autograd import Variable
