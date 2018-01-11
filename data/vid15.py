@@ -11,7 +11,7 @@ class VIDDetection(torch.utils.data.Dataset):
     """ ImageNet VID Video Detection object. """
 
     def __init__(self, image_sets, root_path, dataset_path, result_path=None,
-                 transform=None, dataset_name='ImageNetVID', is_test=False):
+                 transform=None, dataset_name='ImageNetVID', is_test=False, custom_filter=None):
         """ Args:
             image_sets: a list of image set to use, which should correspond to txt files in
             data/.
@@ -22,6 +22,7 @@ class VIDDetection(torch.utils.data.Dataset):
             transform: augmentations applied to image and label.  For testing,
             only BaseTransform is used.
             is_test: whether it is a test dataset.
+            custom_filter: if specified, then filter each roidb before merging (only for training).
         """
         self.transform = transform
         self.name = dataset_name
@@ -34,6 +35,8 @@ class VIDDetection(torch.utils.data.Dataset):
             roidbs = [load_gt_roidb(dataset_name, iset, root_path, dataset_path,
                                     result_path, flip=False) for iset in image_sets]
             filtered_roidb = [filter_roidb(roidb) for roidb in roidbs]
+            if custom_filter is not None:
+                filtered_roidb = [custom_filter(roidb) for roidb in filtered_roidb]
             self.gt_roidb = merge_roidb(filtered_roidb)
 
 
