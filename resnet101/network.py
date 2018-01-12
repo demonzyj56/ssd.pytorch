@@ -22,12 +22,12 @@ model_urls = {
 class Bottleneck(nn.Module):
     expansion = 4
 
-    def __init__(self, inplanes, planes, stride=1, dilation=1, downsample=None):
+    def __init__(self, inplanes, planes, stride=1, dilation=1, downsample=None, kernel_size=3):
         assert dilation in (1, 2)
         super(Bottleneck, self).__init__()
         self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, bias=False)
         self.bn1 = nn.BatchNorm2d(planes)
-        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride,
+        self.conv2 = nn.Conv2d(planes, planes, kernel_size=kernel_size, stride=stride,
                                padding=(1, 2)[dilation > 1], bias=False, dilation=dilation)
         self.bn2 = nn.BatchNorm2d(planes)
         self.conv3 = nn.Conv2d(planes, planes * 4, kernel_size=1, bias=False)
@@ -114,15 +114,27 @@ class ResNetAtrous(nn.Module):
         return s, x
 
 
-def resnet101_atrous_reduced(pretrained=False):
+def resnet101_atrous_reduced(pretrained=False, freeze_conv5_batchnorm=False):
     """Constructs a ResNet-101 model.
 
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
+        freeze_conv5_batchnorm (bool): By default, all batchnorm layers in resnet101
+            should be frozen to use ImageNet statistics.  Since Atrous algorithm is
+            applied on conv5 blocks, if True, freezes also the batchnorm layers in conv5.
     """
     model = ResNetAtrous(Bottleneck, [3, 4, 23, 3])
     if pretrained:
         model.load_state_dict(model_zoo.load_url(model_urls['resnet101']), strict=False)
+        blocks = [model.bn1, model.layer1, model.layer2, model.layer3]
+        if freeze_conv5_batchnorm:
+            blocks.append(model.layer4)
+        for block in blocks:
+            for m in block.modules():
+                if isinstance(m, nn.BatchNorm2d):
+                    for param in m.parameters():
+                        param.requires_grad = False
+
     return model
 
 
@@ -135,13 +147,20 @@ def prediction_module(inplanes):
     return Bottleneck(inplanes=inplanes, planes=256, downsample=downsample)
 
 
-def extra_block_bottleneck(inchannels, outchannels, stride):
+def extra_block_bottleneck(inchannels, outchannels):
     downsample = nn.Sequential(
-        nn.Conv2d(inchannels, outchannels, kernel_size=1, stride=stride, bias=False),
+        nn.Conv2d(inchannels, outchannels, kernel_size=1, stride=2, bias=False),
         nn.BatchNorm2d(outchannels)
     )
     return Bottleneck(inplanes=inchannels, planes=outchannels//Bottleneck.expansion,
-                      stride=stride, downsample=downsample)
+                      stride=2, downsample=downsample)
+
+
+def extra_block_bottleneck_512_last(in_channels, out_channels):
+    # For the last block, the input feature map is 2x2x1024.
+    assert in_channels == out_channels
+    return Bottleneck(inplanes=in_channels, planes=out_channels//Bottleneck.expansion,
+                      stride=1, kernel_size=4, downsample=nn.AvgPool2d(2))
 
 
 resnet101_config = {
@@ -180,7 +199,7 @@ class SSDResNet101(nn.Module):
     """ Resnet101 version of SSD network. """
 
     def __init__(self, phase, num_classes, size=512,
-                 top_k=200, conf_thresh=0.01, nms_thresh=0.45):
+                 top_k=200, conf_thresh=0.01, nms_thresh=0.45, freeze_conv5_batchnorm=False):
         assert size == 512, "Only support input size 512 for now"
         super(SSDResNet101, self).__init__()
         self.phase = phase
@@ -190,11 +209,11 @@ class SSDResNet101(nn.Module):
         self.priorbox = PriorBox(self.cfg)
         self.priors = Variable(self.priorbox.forward(), volatile=True)
 
-        self.resnet101 = resnet101_atrous_reduced(pretrained=True)
+        self.resnet101 = resnet101_atrous_reduced(pretrained=True,
+                                                  freeze_conv5_batchnorm=freeze_conv5_batchnorm)
         self.extras = nn.ModuleList([
-            extra_block_bottleneck(x, 1024, s) for x, s in \
-                zip([2048, 1024, 1024, 1024, 1024], [2, 2, 2, 2, 2])
-        ])
+            extra_block_bottleneck(x, 1024) for x in [2048, 1024, 1024, 1024, 1024]
+        ].append(extra_block_bottleneck_512_last(1024, 1024)))
         self.prediction_module = nn.ModuleList([
             prediction_module(x) for x in [512, 2048, 1024, 1024, 1024, 1024, 1024]
         ])

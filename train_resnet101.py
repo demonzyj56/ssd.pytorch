@@ -21,7 +21,7 @@ parser = argparse.ArgumentParser(description='Single Shot MultiBox Detector Trai
 parser.add_argument('--size', default=512, type=int, help='use 300 or 512 as base size')
 parser.add_argument('--version', default=resnet101_config[512]['name'], help='conv11_2(v2) or pool6(v1) as last layer')
 parser.add_argument('--jaccard_threshold', default=0.5, type=float, help='Min Jaccard index for matching')
-parser.add_argument('--batch_size', default=4, type=int, help='Batch size for training')
+parser.add_argument('--batch_size', default=8, type=int, help='Batch size for training')
 parser.add_argument('--resume', default=None, type=str, help='Resume from checkpoint')
 parser.add_argument('--num_workers', default=4, type=int, help='Number of workers used in dataloading')
 parser.add_argument('--iterations', default=120000, type=int, help='Number of training iterations')
@@ -69,12 +69,6 @@ net = ssd_net
 if args.cuda:
     #  net = torch.nn.DataParallel(ssd_net)
     cudnn.benchmark = True
-
-if args.resume:
-    print('Resuming training, loading {}...'.format(args.resume))
-    ssd_net.load_weights(args.resume)
-
-if args.cuda:
     net = net.cuda()
 
 
@@ -91,7 +85,10 @@ def weights_init(m):
             pass
 
 
-if not args.resume:
+if args.resume:
+    print('Resuming training, loading {}...'.format(args.resume))
+    ssd_net.load_weights(args.resume)
+else:
     print('Initializing weights...')
     # initialize newly added layers' weights with xavier method
     ssd_net.extras.apply(weights_init)
@@ -99,8 +96,8 @@ if not args.resume:
     ssd_net.loc.apply(weights_init)
     ssd_net.conf.apply(weights_init)
 
-optimizer = optim.SGD(net.parameters(), lr=args.lr,
-                      momentum=args.momentum, weight_decay=args.weight_decay)
+optimizer = optim.SGD(filter(lambda p: p.requires_grad, net.parameters()),
+                      lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 criterion = MultiBoxLoss(num_classes, 0.5, True, 0, True, 3, 0.5, False, args.cuda)
 
 def train():
