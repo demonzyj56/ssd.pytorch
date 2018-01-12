@@ -193,7 +193,7 @@ class SSDResNet101(nn.Module):
         self.resnet101 = resnet101_atrous_reduced(pretrained=True)
         self.extras = nn.ModuleList([
             extra_block_bottleneck(x, 1024, s) for x, s in \
-                zip([2048, 1024, 1024, 1024, 1024], [2, 2, 2, 2, 1])
+                zip([2048, 1024, 1024, 1024, 1024], [2, 2, 2, 2, 2])
         ])
         self.prediction_module = nn.ModuleList([
             prediction_module(x) for x in [512, 2048, 1024, 1024, 1024, 1024, 1024]
