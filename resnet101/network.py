@@ -157,10 +157,22 @@ def extra_block_bottleneck(inchannels, outchannels):
 
 
 def extra_block_bottleneck_512_last(in_channels, out_channels):
-    # For the last block, the input feature map is 2x2x1024.
+    # For the last block, the input feature map is 2 x 2 x in_channels,
+    # output feature map is 1 x 1 x out_channels.
+    # By default, in_channels and out_channels are equal.
     assert in_channels == out_channels
     return Bottleneck(inplanes=in_channels, planes=out_channels//Bottleneck.expansion,
                       stride=1, kernel_size=4, downsample=nn.AvgPool2d(2))
+
+
+def extra_block(in_channels, mid_channels, out_channels, kernel_size, stride):
+    """ Follows original SSD, not using bottleneck block. """
+    return nn.Sequential(
+        nn.Conv2d(in_channels, mid_channels, kernel_size=1),
+        nn.ReLU(),
+        nn.Conv2d(mid_channels, out_channels, kernel_size=kernel_size, padding=1, stride=stride),
+        nn.ReLU()
+    )
 
 
 resnet101_config = {
@@ -212,16 +224,19 @@ class SSDResNet101(nn.Module):
         self.resnet101 = resnet101_atrous_reduced(pretrained=True,
                                                   freeze_conv5_batchnorm=freeze_conv5_batchnorm)
         self.extras = nn.ModuleList([
-            extra_block_bottleneck(x, 1024) for x in [2048, 1024, 1024, 1024, 1024]
-        ].append(extra_block_bottleneck_512_last(1024, 1024)))
-        self.prediction_module = nn.ModuleList([
-            prediction_module(x) for x in [512, 2048, 1024, 1024, 1024, 1024, 1024]
+            extra_block(2048, 256, 512, kernel_size=3, stride=2),
+            extra_block(512, 128, 256, kernel_size=3, stride=2),
+            extra_block(256, 128, 256, kernel_size=3, stride=2),
+            extra_block(256, 128, 256, kernel_size=3, stride=2),
+            extra_block(256, 128, 256, kernel_size=4, stride=1),
         ])
         self.loc = nn.ModuleList([
-            nn.Conv2d(1024, x*4, kernel_size=3, padding=1) for x in self.cfg['mbox']
+            nn.Conv2d(x, y*4, kernel_size=3, padding=1) \
+                for x, y in zip([512, 2048, 512, 256, 256, 256, 256], self.cfg['mbox'])
         ])
         self.conf = nn.ModuleList([
-            nn.Conv2d(1024, x*num_classes, kernel_size=3, padding=1) for x in self.cfg['mbox']
+            nn.Conv2d(x, y * num_classes, kernel_size=3, padding=1) \
+            for x, y in zip([512, 2048, 512, 256, 256, 256, 256], self.cfg['mbox'])
         ])
 
         if phase == 'test':
@@ -234,10 +249,9 @@ class SSDResNet101(nn.Module):
         sources = self.sources(x)
 
         # apply multibox head to source layers
-        for (x, p, l, c) in zip(sources, self.prediction_module, self.loc, self.conf):
-            px = p(x)
-            loc.append(l(px).permute(0, 2, 3, 1).contiguous())
-            conf.append(c(px).permute(0, 2, 3, 1).contiguous())
+        for (x, l, c) in zip(sources, self.loc, self.conf):
+            loc.append(l(x).permute(0, 2, 3, 1).contiguous())
+            conf.append(c(x).permute(0, 2, 3, 1).contiguous())
         loc = torch.cat([o.view(o.size(0), -1) for o in loc], 1)
         conf = torch.cat([o.view(o.size(0), -1) for o in conf], 1)
 
@@ -271,7 +285,8 @@ class SSDResNet101(nn.Module):
 
 
 def build_ssd(phase, size=300, num_classes=21):
-    return SSDResNet101(phase=phase, num_classes=num_classes, size=size)
+    return SSDResNet101(phase=phase, num_classes=num_classes, size=size,
+                        freeze_conv5_batchnorm=True)
 
 
 if __name__ == '__main__':
@@ -280,4 +295,3 @@ if __name__ == '__main__':
     a = Variable(torch.randn(1, 3, 512, 512))
     net = SSDResNet101('train', 21)
     b = net(a)
-    from IPython import embed; embed()
