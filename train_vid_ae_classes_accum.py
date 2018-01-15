@@ -1,6 +1,7 @@
 import os
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
 import torch.nn.init as init
@@ -10,11 +11,13 @@ import torch.utils.data as data
 from data import v2_512, v2, detection_collate, VOCroot
 from data import VIDDetection, VIDroot, VID_CLASSES, BaseTransform
 from utils.augmentations import SSDAugmentation
-from layers.modules import SSDReconstruction, DiscriminativeReconstructionLoss
 from ssd import build_ssd
 import numpy as np
 import time
 from data.scripts.create_train_lists import train_list_by_class
+from layers.modules.drae import SSDReconstruction
+from layers.modules.drae_loss import DRAELoss
+import pickle
 
 def str2bool(v):
     return v.lower() in ("yes", "true", "t", "1")
@@ -88,7 +91,7 @@ weight_decay = args.weight_decay
 momentum = args.momentum
 
 ssd_net = build_ssd('train', ssd_dim, num_classes)
-ae_net = SSDReconstruction(ssd_net, p=0.1)
+ae_net = SSDReconstruction(ssd_net, cfg, args.jaccard_threshold, accum=128, p=0.1)
 net = ae_net
 
 
@@ -115,12 +118,40 @@ else:
 # optimizer = optim.SGD(ae_net.ae.parameters(), lr=args.lr,
 #                       momentum=args.momentum, weight_decay=args.weight_decay)
 optimizer = optim.Adam(ae_net.ae.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-criterion = DiscriminativeReconstructionLoss(args.lamb, cfg, 0.5)
+criterion = DRAELoss(lamb=args.lamb, size_average=True)
 # transform = SSDAugmentation(ssd_dim, means)
 transform = BaseTransform(ssd_dim, means)
 
 
 def filter_roidb_by_class(roidb, class_name):
+    """ For each entry in roidb, remove from annotations that is different from class_name.
+    If no annotations match class_name, that entry is removed. """
+    assert class_name in VID_CLASSES
+    for idx, name in enumerate(VID_CLASSES):
+        if name == class_name:
+            class_index = idx + 1
+            break
+
+    def filter_entry_by_class(entry):
+        if entry['boxes'].shape[0] == 0:
+            return None
+        mask = (entry['gt_classes'] == class_index)
+        if not any(mask):
+            return None
+        entry['boxes'] = entry['boxes'][mask, :]
+        entry['gt_classes'] = entry['gt_classes'][mask]
+        entry['gt_overlaps'] = entry['gt_overlaps'][mask, :]
+        entry['max_classes'] = entry['max_classes'][mask]
+        entry['max_overlaps'] = entry['max_overlaps'][mask]
+        return entry
+
+    num_before = len(roidb)
+    roidb = [filter_entry_by_class(entry) for entry in roidb]
+    roidb = [entry for entry in roidb if entry is not None]
+    num_after = len(roidb)
+    print('filtered {} roidb entries for class {}: {} -> {}'.format(
+        num_before-num_after, args.class_name, num_before, num_after
+    ))
     return roidb
 
 
@@ -132,9 +163,7 @@ def train():
 
     timers = {'image': Timer(), 'net': Timer(), 'loss': Timer(), 'backward': Timer(), 'total': Timer()}
     iteration = 0
-    # all_features = [[] for _ in range(7)]
     for e in range(args.epochs):
-        epoch_loss = [0 for _ in range(7)]
         print('Training {}/{} epochs'.format(e+1, args.epochs))
         data_loader = data.DataLoader(dataset, batch_size, num_workers=args.num_workers,
                                       shuffle=True, collate_fn=detection_collate, pin_memory=True)
@@ -147,52 +176,96 @@ def train():
                 images = Variable(images)
                 targets = [Variable(anno, volatile=True) for anno in targets]
             timers['net'].tic()
-            out = net(images)
+            recon_pairs = net(images, targets)
             t_net = timers['net'].toc(average=False)
-            timers['loss'].tic()
-            optimizer.zero_grad()
-            losses = criterion(out, targets)
-            t_loss = timers['loss'].toc(average=False)
-            # # ================================================
-            # feature_maps = net.ssd_feature_maps(images)
-            # features = criterion.samples(feature_maps, targets)
-            # for idx, f in enumerate(features):
-            #     if len(f) > 0:
-            #         all_features[idx].append(f)
-            # print('Sample {}/{}'.format(iteration, len(dataset)))
-            # # ================================================
             timers['backward'].tic()
-            for idx, l in enumerate(losses):
-                epoch_loss[idx] += l.data[0] * args.batch_size
-                if l.requires_grad:
-                    l.backward()
+            optimizer.zero_grad()
+            loss_display = []
+            for orig, recon in recon_pairs:
+                if orig is not None:
+                    loss = criterion(recon, orig)
+                    loss.backward()
+                    loss_display.append(loss.data[0])
+                else:
+                    loss_display.append(0.)
             optimizer.step()
             t_backward = timers['backward'].toc(average=False)
             if iteration % 1 == 0:
-                loss_fmt = ', '.join(['{:.1f}'.format(l.data[0]) for l in losses])
-                print('Iter: {:d}, net: {:.4f}s, match: {:.4f}s, backward: {:.4f}s, loss: {:s}'.format(
-                    iteration, t_net, t_loss, t_backward, loss_fmt
+                print('Iter: {:d}, net: {:.4f}s, backward: {:.4f}s, total_loss: {:s}'.format(
+                    iteration, t_net, t_backward, ', '.join(['{:.1f}'.format(l) for l in loss_display])
                 ))
             if args.snapshot > 0 and iteration % args.snapshot == 0:
-                filename = 'weights/ssd{}_vid_ae_{}.pth'.format(args.size, iteration)
+                filename = 'weights/ssd{}_vid_ae_{}_{}.pth'.format(args.size, args.class_name, iteration)
                 print('Saving state to {}'.format(filename))
                 torch.save(ae_net.state_dict(), filename)
 
-        print('Finish epoch {:d}/{:d}, final average loss: '.format(e+1, args.epochs))
-        print([el/len(dataset) for el in epoch_loss])
+    # Last batch, show hand!
+    optimizer.zero_grad()
+    for orig, recon in net.show_hand():
+        if orig is not None:
+            loss = criterion(recon, orig)
+            loss.backward()
+    optimizer.step()
 
-    final_name = os.path.join(args.save_folder, 'vid_ssd_ae_{}.pth'.format(args.version))
+    final_name = os.path.join(args.save_folder, 'vid_ssd_ae_{}_{}.pth'.format(args.class_name, args.version))
     print('Saving final model {}'.format(final_name))
     torch.save(ae_net.state_dict(), final_name)
-    # # ==================================================
-    # print('Saving cached features...')
-    # for i in range(7):
-    #     if len(all_features[i]) > 0:
-    #         f = np.concatenate(all_features[i], axis=0)
-    #         np.save('data/cache/features_{}_{}'.format(train_sets[0], i), f)
-    # # ==================================================
+
+
+def score_frame(image, target):
+    # Compute the reconstruction loss for one single frame.
+    # Compute the reconstruction loss of each matched box on each frame.
+    # Return a list containing scores on each frame.
+    recon_pairs = net.forward_full_batch(image, target)
+    losses = []
+    for orig, recon in recon_pairs:
+        if orig is not None:
+            loss = torch.pow(recon.data-orig.data, 2).sum(dim=1)
+            losses.append(loss)
+        else:
+            losses.append([])
+
+    return losses
+
+
+def score():
+    net.eval()  # disable dropout
+    dataset = VIDDetection(train_sets, 'data/', VIDroot, transform=BaseTransform(ssd_dim, means), is_test=True,
+                           custom_filter=lambda roidb: filter_roidb_by_class(roidb, args.class_name))
+    all_losses = []
+    timer = Timer()
+    for i, (images, targets) in enumerate(dataset):
+        if len(targets) == 0:
+            all_losses.append([[] for _ in range(7)])
+            continue
+        images.unsqueeze_(0)
+        targets = [torch.FloatTensor(targets)]
+        if args.cuda:
+            images = Variable(images.cuda())
+            targets = [Variable(anno.cuda(), volatile=True) for anno in targets]
+        else:
+            images = Variable(images)
+            targets = [Variable(anno, volatile=True) for anno in targets]
+        timer.tic()
+        loss = score_frame(images, targets)
+        for j in range(len(loss)):
+            if len(loss[j]) > 0:
+                loss[j] = loss[j].cpu().numpy()
+            else:
+                loss[j] = []
+        all_losses.append(loss)
+        print('Sample {}/{}, elapsed time: {:.3f}s'.format(i+1, len(dataset), timer.toc(average=False)))
+
+    save_filename = 'data/cache/all_losses_{}.pkl'.format(train_sets[0])
+    print('Saving losses results to {}'.format(save_filename))
+    with open(save_filename, 'wb') as f:
+        pickle.dump(all_losses, f, pickle.HIGHEST_PROTOCOL)
+
+    return all_losses
+
 
 if __name__ == '__main__':
     train()
+    score()
 
 

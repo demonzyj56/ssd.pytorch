@@ -1,13 +1,10 @@
 """ Autoencoder for reconstruction. """
-import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
-from numpy import argmin
 from ..box_utils import match
 from ..functions import PriorBox
-from .drae_loss import DRAELoss
 
 mbox = {
     '300': [4, 6, 6, 6, 4, 4],  # number of boxes per feature map location
@@ -45,146 +42,120 @@ def prepare_positive_targets(priors, targets, batch_size, ov_thresh, cfg):
     return gt_masks
 
 
-class ConvolutionalAutoencoder(nn.Module):
+class MyAutoencoder(nn.Module):
 
-    def __init__(self, in_channels):
-        super(ConvolutionalAutoencoder, self).__init__()
-        self.encode = nn.Conv2d(in_channels, in_channels//8, kernel_size=1,
-                                stride=1, padding=0)
-        self.decode = nn.Conv2d(in_channels//8, in_channels, kernel_size=1,
-                                stride=1, padding=0)
-
-    def forward(self, xx):
-        # x = F.dropout(self.encode(xx), training=self.training)
-        x = self.encode(xx)
-        x = F.relu(self.decode(x))
-
-        return torch.pow(xx - x, 2).sum(dim=1)
-
-
-class MnistAutoencoder(nn.Module):
-
-    def __init__(self, in_channels, noise_prob=-1):
-        super(MnistAutoencoder, self).__init__()
-        self.encode1 = self.conv1x1(in_channels, in_channels*2)
-        self.encode2 = self.conv1x1(in_channels*2, in_channels//2)
-        self.encode3 = self.conv1x1(in_channels//2, in_channels//8)
-        self.decode3 = self.conv1x1(in_channels//8, in_channels//2)
-        self.decode2 = self.conv1x1(in_channels//2, in_channels*2)
-        self.decode1 = self.conv1x1(in_channels*2, in_channels)
-        self.noise_prob = noise_prob
+    def __init__(self, in_channels, p=-1):
+        super(MyAutoencoder, self).__init__()
+        self.encode1 = nn.Linear(in_channels, in_channels*2)
+        self.encode2 = nn.Linear(in_channels*2, in_channels//2)
+        self.encode3 = nn.Linear(in_channels//2, in_channels//8)
+        self.decode3 = nn.Linear(in_channels//8, in_channels//2)
+        self.decode2 = nn.Linear(in_channels//2, in_channels*2)
+        self.decode1 = nn.Linear(in_channels*2, in_channels)
+        self.p = p
 
     def forward(self, xx):
-        if self.noise_prob > 0:
-            x = F.dropout(xx, p=self.noise_prob, training=self.training)
+        if self.p > 0:
+            x = F.dropout(xx, p=self.p, training=self.training)
         else:
             x = xx
-        # x = self.decode(self.encode(x))
         x = F.sigmoid(self.encode1(x))
         x = F.sigmoid(self.encode2(x))
         x = self.encode3(x)
         x = F.sigmoid(self.decode3(x))
         x = F.sigmoid(self.decode2(x))
-        x = F.relu(self.decode1(x), inplace=True)
+        x = F.relu(self.decode1(x))
 
-        return torch.pow(xx-x, 2).sum(dim=1)
-
-    def conv1x1(self, in_channels, out_channels):
-        return nn.Conv2d(in_channels, out_channels, kernel_size=1,
-                         stride=1, padding=0)
-
-
-class DiscriminativeReconstructionLoss(nn.Module):
-
-    def __init__(self, lamb, cfg, ov_thresh):
-        super(DiscriminativeReconstructionLoss, self).__init__()
-        self.cfg = cfg
-        self.ov_thresh = ov_thresh
-        self.lamb = lamb
-        _priorbox = PriorBox(cfg)
-        self.priors = Variable(_priorbox.forward(), volatile=True)
-        self.drae_loss = DRAELoss(lamb, size_average=True)
-
-    def forward(self, x, targets):
-        gt_masks = prepare_positive_targets(
-            self.priors, targets, x[0].size(0), self.ov_thresh, self.cfg
-        )
-        gt_masks = [Variable(mask.sum(dim=1).gt(0), requires_grad=False) for mask in gt_masks]
-        assert len(x) == len(gt_masks), \
-            'Length of input is {} while num of masks is {}'.format(len(x), len(gt_masks))
-        assert all([xx.size() == mask.size() for (xx, mask) in zip(x, gt_masks)])
-        losses = []
-        num_samples = []
-        samples_selected = []
-        for (xx, mask) in zip(x, gt_masks):
-            pos = torch.masked_select(xx, mask)
-            num_samples.append(pos.numel())
-            if pos.numel() == 0:
-                losses.append(Variable(torch.zeros(1), requires_grad=False).cuda())
-                samples_selected.append(0)
-            elif pos.numel() <= 2:
-                losses.append(pos.mean())
-                samples_selected.append(pos.numel())
-            else:
-                reg, idx = self.regularity_term(pos)
-                recon_loss = pos[idx].mean() + self.lamb * reg
-                losses.append(recon_loss)
-                samples_selected.append(idx.numel())
-        # print(num_samples)
-        # print(samples_selected)
-        return losses
-
-    def regularity_term(self, x):
-        assert len(x) > 2
-        regularities = []
-        x, idx = torch.sort(x, descending=False)
-        for i in range(1, x.numel()):
-            pos_variance = torch.var(x[:i], unbiased=False)*i if i > 1 else 0.
-            neg_variance = torch.var(x[i:], unbiased=False)*(x.numel()-i) if i < x.numel()-1 else 0.
-            regularities.append(pos_variance + neg_variance)
-        select = argmin([r.data[0] for r in regularities])
-        pos_idx = idx[:(select+1)]
-
-        return regularities[select] / x.var(unbiased=False) / x.numel(), pos_idx
-
-    def samples(self, feature_maps, targets):
-        gt_masks = prepare_positive_targets(
-            self.priors, targets, feature_maps[0].size(0), self.ov_thresh, self.cfg
-        )
-        gt_masks = [mask.sum(dim=1).gt(0) for mask in gt_masks]
-        samples = []
-        for feature_map, mask in zip(feature_maps, gt_masks):
-            sample = []
-            for num in range(mask.size(0)):
-                for h in range(mask.size(1)):
-                    for w in range(mask.size(2)):
-                        if mask[num, h, w]:
-                            sample.append(feature_map.data[num, :, h, w].contiguous().view(1, -1))
-            if len(sample) > 0:
-                samples.append(torch.cat(sample, 0).cpu().numpy())
-            else:
-                samples.append([])
-
-        return samples
+        return x
 
 
 class SSDReconstruction(nn.Module):
 
-    def __init__(self, ssd, p=-1):
+    def __init__(self, ssd, cfg, ov_thresh, accum=-1, p=-1):
         super(SSDReconstruction, self).__init__()
         self.ssd = ssd
         for param in self.ssd.parameters():
             param.requires_grad = False
         self.ae = nn.ModuleList([
-            MnistAutoencoder(c.in_channels, noise_prob=p) for c in ssd.conf
+            MyAutoencoder(c.in_channels, p=p) for c in ssd.conf
         ])
+        self.cfg = cfg
+        self.ov_thresh = ov_thresh
+        self.accum = accum
+        self.priors = Variable(PriorBox(cfg).forward(), volatile=True)
+        self.in_channels = [c.in_channels for c in ssd.conf]
+        if accum > 0:
+            self.accumulated_features = [self._empty_tensor() for _ in self.in_channels]
+        else:
+            self.accumulated_features = None
 
-    def forward(self, x):
+    def forward(self, x, targets):
         feature_maps = self.ssd_feature_maps(x)
-        return [a(f) for (f, a) in zip(feature_maps, self.ae)]
+        features = self.extract_features(feature_maps, targets)
+        if self.accum <= 0:
+            # compute loss immediately
+            features = [Variable(f).cuda() for f in features]
+            return_pairs = []
+            for (f, a) in zip(features, self.ae):
+                if self._valid_feature(f):
+                    return_pairs.append((f, a(f)))
+                else:
+                    return_pairs.append((None, None))
+        else:
+            # postpone until enough samples are accumulated
+            for idx in range(len(features)):
+                if self._valid_feature(self.accumulated_features[idx]):
+                    if self._valid_feature(features[idx]):
+                        self.accumulated_features[idx] = torch.cat((self.accumulated_features[idx], features[idx]), dim=0)
+                else:
+                    if self._valid_feature(features[idx]):
+                        self.accumulated_features[idx] = features[idx]
+            return_pairs = []
+            for idx, channels in enumerate(self.in_channels):
+                if self._valid_feature(self.accumulated_features[idx]) and self.accumulated_features[idx].size(0) >= self.accum:
+                    feature = Variable(self.accumulated_features[idx]).cuda()
+                    return_pairs.append((feature, self.ae[idx](feature)))
+                    self.accumulated_features[idx] = self._empty_tensor()
+                else:
+                    return_pairs.append((None, None))
+
+        return return_pairs
+
+    def forward_full_batch(self, x, targets):
+        feature_maps = self.ssd_feature_maps(x)
+        features = self.extract_features(feature_maps, targets)
+        return_pairs = []
+        if True:
+            # compute loss immediately
+            features = [Variable(f).cuda() for f in features]
+            return_pairs = []
+            for (f, a) in zip(features, self.ae):
+                if self._valid_feature(f):
+                    return_pairs.append((f, a(f)))
+                else:
+                    return_pairs.append((None, None))
+
+        return return_pairs
+
+    def show_hand(self):
+        return_pairs = []
+        for feature, ae in zip(self.accumulated_features, self.ae):
+            if self._valid_feature(feature):
+                f = Variable(feature).cuda()
+                return_pairs.append((f, ae(f)))
+            else:
+                return_pairs.append((None, None))
+
+        self.accumulated_features = None
+        return return_pairs
+
+    def _valid_feature(self, f):
+        return len(f) > 0
+
+    def _empty_tensor(self):
+        return torch.zeros(0)
 
     def ssd_feature_maps(self, x):
-        # TODO(leoyolo): subject to change
         sources = list()
         ssd = self.ssd
         for k in range(23):
@@ -200,3 +171,19 @@ class SSDReconstruction(nn.Module):
                 sources.append(x)
 
         return sources
+
+    def extract_features(self, feature_maps, targets):
+        gt_masks = prepare_positive_targets(
+            self.priors, targets, feature_maps[0].size(0), self.ov_thresh, self.cfg
+        )
+        gt_masks = [mask.sum(dim=1).gt(0) for mask in gt_masks]
+        samples = []
+        for feature_map, mask in zip(feature_maps, gt_masks):
+            feature_map = feature_map.data.permute(0, 2, 3, 1)
+            mask = mask.unsqueeze(-1).expand_as(feature_map)
+            sample = torch.masked_select(feature_map, mask).contiguous().view(-1, feature_map.size(-1))
+            samples.append(sample)
+
+        return samples
+
+

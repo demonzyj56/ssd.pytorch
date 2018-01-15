@@ -71,8 +71,6 @@ class MnistAutoencoder(nn.Module):
         self.decode3 = self.conv1x1(in_channels//8, in_channels//2)
         self.decode2 = self.conv1x1(in_channels//2, in_channels*2)
         self.decode1 = self.conv1x1(in_channels*2, in_channels)
-        # self.encode = self.conv1x1(in_channels, in_channels//8)
-        # self.decode = self.conv1x1(in_channels//8, in_channels)
         self.noise_prob = noise_prob
 
     def forward(self, xx):
@@ -81,11 +79,11 @@ class MnistAutoencoder(nn.Module):
         else:
             x = xx
         # x = self.decode(self.encode(x))
-        x = F.relu(self.encode1(x), inplace=True)
-        x = F.relu(self.encode2(x), inplace=True)
+        x = F.sigmoid(self.encode1(x))
+        x = F.sigmoid(self.encode2(x))
         x = self.encode3(x)
-        x = F.relu(self.decode3(x), inplace=True)
-        x = F.relu(self.decode2(x), inplace=True)
+        x = F.sigmoid(self.decode3(x))
+        x = F.sigmoid(self.decode2(x))
         x = F.relu(self.decode1(x), inplace=True)
 
         return torch.pow(xx-x, 2).sum(dim=1)
