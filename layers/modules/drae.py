@@ -69,6 +69,20 @@ class MyAutoencoder(nn.Module):
         return x
 
 
+class SimpleAutoencoder(nn.Module):
+
+    def __init__(self, in_channels):
+        super(SimpleAutoencoder, self).__init__()
+        self.encode = nn.Linear(in_channels, 64)
+        self.decode = nn.Linear(64, in_channels)
+
+    def forward(self, x):
+        x = self.encode(x)
+        x = F.relu(self.decode(x))
+
+        return x
+
+
 class SSDReconstruction(nn.Module):
 
     def __init__(self, ssd, cfg, ov_thresh, accum=-1, p=-1):
@@ -187,3 +201,42 @@ class SSDReconstruction(nn.Module):
         return samples
 
 
+class SSDReconstructionConfShared(nn.Module):
+
+    def __init__(self, ssd, cfg, ov_thresh, p=-1):
+        super(SSDReconstructionConfShared, self).__init__()
+        self.ssd = ssd
+        assert callable(getattr(self.ssd, 'sources'))
+        for param in self.ssd.parameters():
+            param.requires_grad = False
+        # self.ae = MyAutoencoder(ssd.conf[0].in_channels, p=p)
+        self.ae = SimpleAutoencoder(ssd.conf[0].in_channels)
+        self.cfg = cfg
+        self.ov_thresh = ov_thresh
+        self.priors = Variable(PriorBox(cfg).forward(), volatile=True)
+
+    def forward(self, x, targets):
+        feature_maps = self.ssd.sources(x)
+        features = self.extract_features(feature_maps, targets)
+        features = torch.cat([f for f in features if self._valid_feature(f)], dim=0)
+        features = Variable(features.cuda())
+        return features, self.ae(features)
+
+    def extract_features(self, feature_maps, targets):
+        gt_masks = prepare_positive_targets(
+            self.priors, targets, feature_maps[0].size(0), self.ov_thresh, self.cfg
+        )
+        gt_masks = [mask.sum(dim=1).gt(0) for mask in gt_masks]
+        samples = []
+        for feature_map, mask in zip(feature_maps, gt_masks):
+            mask = mask.unsqueeze(1).repeat(1, feature_map.size(1), 1, 1)
+            assert mask.size() == feature_map.size()
+            feature_map = feature_map.data.permute(0, 2, 3, 1)
+            mask = mask.permute(0, 2, 3, 1)
+            sample = torch.masked_select(feature_map, mask).contiguous().view(-1, feature_map.size(-1))
+            samples.append(sample)
+
+        return samples
+
+    def _valid_feature(self, f):
+        return len(f) > 0
