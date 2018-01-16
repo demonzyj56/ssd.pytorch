@@ -64,6 +64,23 @@ def random_train_file():
     return seq_name
 
 
+def train_list_by_volume(name):
+    """ Create train list by volume name,
+    which is given by train/ILSVRC2015_VID_train_000x_ILSVRC2015_train_xxxxxxxx. """
+    with open('data/VID_train_videos.txt', 'r') as f:
+        lines = [x.strip().split(' ') for x in f.readlines()]
+    name_to_frames = dict([(x[0], int(x[-1])) for x in lines])
+    assert name in name_to_frames.keys()
+    _, mid, end = name.split('/')
+    train_list_name = 'VID_train_frames_{}_{}'.format(mid.split('_')[-1], end.split('_')[-1])
+    num_frames = name_to_frames[name]
+    with open('data/{}.txt'.format(train_list_name), 'wt') as f:
+        for i in range(num_frames):
+            f.write('{:s} 1 {:d} {:d}\n'.format(name, i, num_frames))
+    print('Done generating {}, number of frames: {}'.format(train_list_name, num_frames))
+
+    return train_list_name
+
 def train_list_by_class(name):
 
     def class_name_to_id(class_name):
