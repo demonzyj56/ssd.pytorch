@@ -52,6 +52,7 @@ def add_extras_conf_shared(cfg, i, batch_norm=False):
 
 
 def multibox_conf_shared(vgg, extra_layers, cfg, num_classes):
+    """ Notice that conf_layers have only ONE element. """
     loc_layers = []
     conf_layers = []
     vgg_source = [24, -2]
@@ -73,10 +74,6 @@ base = {
             512, 512, 512],
     '512': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'C', 512, 512, 512, 'M',
             512, 512, 512],
-}
-extras = {
-    '300': [256, 'S', 512, 128, 'S', 256, 128, 256, 128, 256],
-    '512': [256, 'S', 512, 128, 'S', 256, 128, 'S', 256, 128, 'S', 256, 128, '512Last'],
 }
 extras_conf_shared = {
     '300': [256, 'S', 512, 256, 'S', 512, 256, 512, 256, 512],
@@ -195,6 +192,30 @@ class SSDConfShared(nn.Module):
                 self.priors
             )
         return output
+
+    def sources(self, x):
+        """ Returns source layer. """
+        sources = list()
+
+        # apply vgg up to conv4_3 relu
+        for k in range(23):
+            x = self.vgg[k](x)
+
+        s = self.L2Norm(x)
+        sources.append(s)
+
+        # apply vgg up to fc7
+        for k in range(23, len(self.vgg)):
+            x = self.vgg[k](x)
+        sources.append(self.fc7_conv_512(x))
+
+        # apply extra layers and cache source layer outputs
+        for k, v in enumerate(self.extras):
+            x = F.relu(v(x), inplace=True)
+            if k % 2 == 1:
+                sources.append(x)
+
+        return sources
 
     def load_weights(self, base_file):
         other, ext = os.path.splitext(base_file)
