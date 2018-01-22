@@ -72,12 +72,16 @@ class VIDVideoDetection(torch.utils.data.Dataset):
 
         if self.transform != None: # only video transformation is applicable
             imgs, boxes, labels = self.transform(imgs, gt[0], gt[1]-1)
-            im = []
-            for i in range(self.k*2+1):
-                im.append(torch.from_numpy(imgs[i][:, :, (2, 1, 0)]).permute(2, 0, 1))
+            if isinstance(imgs, list):
+                # Returns image sequences
+                im = []
+                for i in range(self.k*2+1):
+                    im.append(torch.from_numpy(imgs[i][:, :, (2, 1, 0)]).permute(2, 0, 1))
+                    imgs = torch.stack(im, 0)
+            else:
+                # Returns only single frame
+                imgs = torch.from_numpy(imgs[:, :, (2, 1, 0)]).permute(2, 0, 1)
             target = np.hstack((boxes, np.expand_dims(labels, axis=1)))
-
-        imgs = torch.stack(im, 0)
 
         return imgs, target
 
@@ -120,12 +124,16 @@ class VIDVideoDetection(torch.utils.data.Dataset):
 
         if self.transform != None: # only video transformation is applicable
             imgs, boxes, labels = self.transform(imgs, gt[0], gt[1]-1)
-            im = []
-            for i in range(self.k*2+1):
-                im.append(torch.from_numpy(imgs[i][:, :, (2, 1, 0)]).permute(2, 0, 1))
+            if isinstance(imgs, list):
+                # Returns image sequences
+                im = []
+                for i in range(self.k*2+1):
+                    im.append(torch.from_numpy(imgs[i][:, :, (2, 1, 0)]).permute(2, 0, 1))
+                    imgs = torch.stack(im, 0)
+            else:
+                # Returns only single frame
+                imgs = torch.from_numpy(imgs[:, :, (2, 1, 0)]).permute(2, 0, 1)
             target = np.hstack((boxes, np.expand_dims(labels, axis=1)))
-
-        imgs = torch.stack(im, 0)
 
         return imgs, target, h, w
 
@@ -159,6 +167,8 @@ class VIDVideoDetection(torch.utils.data.Dataset):
                 if context_idx<min_idx or context_idx>max_idx:
                     return False
                 else:
+                    if not ('pattern' in self.gt_roidb[context_idx].keys()):
+                        return False
                     if self.gt_roidb[index]['pattern'] != self.gt_roidb[context_idx]['pattern']:
                         return False
                     elif self.gt_roidb[index]['frame_seg_id'] + offset != self.gt_roidb[context_idx]['frame_seg_id']:
