@@ -782,3 +782,66 @@ class SSDAugmentationVideo(object):
 
     def __call__(self, img, boxes, labels):
         return self.augment(img, boxes, labels)
+
+
+class Mixup(object):
+    """ Perform mixup between input images.
+    The combination weights are drawn randomly from Beta distribution."""
+
+    def __init__(self, num_mixup=2, weight='random', step=None):
+        self.num_mixup = num_mixup
+        self.weight = weight
+
+    def __call__(self, images, boxes=None, labels=None):
+        keyImg = images[len(images)//2].copy()
+        if self._do_mixup() and random.randint(3) < 1:
+            for _ in range(self.num_mixup-1):
+                choice = random.randint(len(images))
+                weight = self._random_weights()
+                keyImg = weight * keyImg + (1 - weight) * images[choice]
+        return keyImg, boxes, labels
+
+    def _random_weights(self, alpha=0.2):
+        """ Generate random weights from Beta distribution for current key image.
+        We enforce the weight to be greater than 0.5 to ensure that the original
+        image is largely retained. """
+        if self.weight != 'random':
+            return self.weight
+        beta = random.beta(alpha, alpha)
+        if beta < 0.5:
+            beta = 1 - beta
+        return beta
+
+    def _do_mixup(self):
+        return True
+
+
+class SSDAugmentationVideoMixup(object):
+    """ Mixup applied before actual augmentation. """
+
+    def __init__(self, size=300, mean=(104, 117, 123), num_mixup=2, weight='random', step=None):
+        """ Args:
+            size: size of each input image.
+            mean: image mean value to subtract.
+            max_gap: maximum gap between two images to mixup.
+            num_mixup: number of images to mixup (default: 2).
+            mixup_scheduler: a scheduler that decide whether at current
+                condition should perform mixup."""
+        self.mean = mean
+        self.size = size
+        self.augment = Compose([
+            Mixup(num_mixup, weight, step),
+            ConvertFromInts(),
+            ToAbsoluteCoords(),
+            PhotometricDistort(),
+            Expand(self.mean),
+            RandomSampleCrop(),
+            RandomMirror(),
+            ToPercentCoords(),
+            Resize(self.size),
+            SubtractMeans(self.mean)
+        ])
+
+    def __call__(self, img, boxes, labels):
+        """ img is a list of numpy images. """
+        return self.augment(img, boxes, labels)
