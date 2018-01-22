@@ -14,6 +14,7 @@ from layers.modules import MultiBoxLoss
 from ssd import build_ssd
 import numpy as np
 import time
+from pprint import pprint
 
 def str2bool(v):
     return v.lower() in ("yes", "true", "t", "1")
@@ -41,6 +42,8 @@ parser.add_argument('--voc_root', default=VOCroot, help='Location of VOC root di
 parser.add_argument('--train_files', default='DET_train_30classes+VID_train_15frames', type=str,
                     help='Train sets to look up in data/, joined by +')
 args = parser.parse_args()
+print('Args:')
+pprint(args)
 
 if args.cuda and torch.cuda.is_available():
     torch.set_default_tensor_type('torch.cuda.FloatTensor')
@@ -66,6 +69,8 @@ weight_decay = 0.0005
 stepvalues = (80000, 100000, 120000)
 gamma = args.gamma
 momentum = args.momentum
+expand_factor = 2.5
+crop_factor = (None, (0.5, None), (0.7, None), (0.9, None))
 
 if args.visdom:
     import visdom
@@ -126,7 +131,7 @@ def train():
     # dataset = VOCDetection(args.voc_root, train_sets, SSDAugmentation(
     #     ssd_dim, means), AnnotationTransform())
     dataset = VIDDetection(train_sets, 'data/', VIDroot, transform=SSDAugmentation(
-        ssd_dim, means
+        ssd_dim, means, expand_factor, crop_factor
     ))
 
     epoch_size = len(dataset) // args.batch_size

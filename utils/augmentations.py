@@ -218,18 +218,21 @@ class RandomSampleCrop(object):
             boxes (Tensor): the adjusted bounding boxes in pt form
             labels (Tensor): the class labels for each bbox
     """
-    def __init__(self):
-        self.sample_options = (
-            # using entire original input image
-            None,
-            # sample a patch s.t. MIN jaccard w/ obj in .1,.3,.4,.7,.9
-            (0.1, None),
-            (0.3, None),
-            (0.7, None),
-            (0.9, None),
-            # randomly sample a patch
-            (None, None),
-        )
+    def __init__(self, sample_options=None):
+        if sample_options is None:
+            self.sample_options = (
+                # using entire original input image
+                None,
+                # sample a patch s.t. MIN jaccard w/ obj in .1,.3,.4,.7,.9
+                (0.1, None),
+                (0.3, None),
+                (0.7, None),
+                (0.9, None),
+                # randomly sample a patch
+                (None, None),
+            )
+        else:
+            self.sample_options = sample_options
 
     def __call__(self, image, boxes=None, labels=None):
         height, width, _ = image.shape
@@ -266,7 +269,7 @@ class RandomSampleCrop(object):
                 overlap = jaccard_numpy(boxes, rect)
 
                 # is min and max overlap constraint satisfied? if not try again
-                if overlap.min() < min_iou and max_iou < overlap.max():
+                if overlap.min() < min_iou or max_iou < overlap.max():
                     continue
 
                 # cut the crop from the image
@@ -310,15 +313,19 @@ class RandomSampleCrop(object):
 
 
 class Expand(object):
-    def __init__(self, mean):
+    def __init__(self, mean, expand_factor=None):
         self.mean = mean
+        if expand_factor is None:
+            self.expand_factor = 4
+        else:
+            self.expand_factor = expand_factor
 
     def __call__(self, image, boxes, labels):
         if random.randint(2):
             return image, boxes, labels
 
         height, width, depth = image.shape
-        ratio = random.uniform(1, 4)
+        ratio = random.uniform(1, self.expand_factor)
         left = random.uniform(0, width*ratio - width)
         top = random.uniform(0, height*ratio - height)
 
@@ -398,15 +405,15 @@ class PhotometricDistort(object):
 
 
 class SSDAugmentation(object):
-    def __init__(self, size=300, mean=(104, 117, 123)):
+    def __init__(self, size=300, mean=(104, 117, 123), expand_factor=None, crop_factor=None):
         self.mean = mean
         self.size = size
         self.augment = Compose([
             ConvertFromInts(),
             ToAbsoluteCoords(),
             PhotometricDistort(),
-            Expand(self.mean),
-            RandomSampleCrop(),
+            Expand(self.mean, expand_factor),
+            RandomSampleCrop(crop_factor),
             RandomMirror(),
             ToPercentCoords(),
             Resize(self.size),
