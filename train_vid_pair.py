@@ -7,8 +7,9 @@ import torch.nn.init as init
 import argparse
 from torch.autograd import Variable
 import torch.utils.data as data
-from data import v2_512, v2, detection_collate_pair, VOCroot
-from data import VIDDetection, VIDPairDetection, VIDroot, VID_CLASSES, BaseTransform
+from data import v2_512, v2, VOCroot
+from data import VIDDetection, VIDroot, VID_CLASSES, BaseTransform
+from data.vid15_pair import detection_collate_pair, VIDPairDetection
 from utils.augmentations import SSDAugmentation
 # from layers.modules import MultiBoxLoss
 from layers.modules.multibox_pair_loss import MultiBoxPairLoss

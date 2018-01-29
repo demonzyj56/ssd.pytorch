@@ -59,7 +59,7 @@ class VIDVideoDetection(torch.utils.data.Dataset):
                 im, _, _ = self.pull_orig_item(index + offset, is_context=True)
                 imgs.append(im)
             else:
-                imgs.append(imgs[-1])
+                imgs.append(imgs[-1].copy())
                 flag = False
         flag = True
         for offset in range(-1, -self.k-1, -1):
@@ -67,7 +67,7 @@ class VIDVideoDetection(torch.utils.data.Dataset):
                 im, _, _ = self.pull_orig_item(index + offset, is_context=True)
                 imgs.insert(0, im)
             else:
-                imgs.insert(0, imgs[0])
+                imgs.insert(0, imgs[0].copy())
                 flag = False
 
         if self.transform != None: # only video transformation is applicable
@@ -111,7 +111,7 @@ class VIDVideoDetection(torch.utils.data.Dataset):
                 im, _, _ = self.pull_orig_item(index + offset, is_context=True)
                 imgs.append(im)
             else:
-                imgs.append(imgs[-1])
+                imgs.append(imgs[-1].copy())
                 flag = False
         flag = True
         for offset in range(-1, -self.k-1, -1):
@@ -119,7 +119,7 @@ class VIDVideoDetection(torch.utils.data.Dataset):
                 im, _, _ = self.pull_orig_item(index + offset, is_context=True)
                 imgs.insert(0, im)
             else:
-                imgs.insert(0, imgs[0])
+                imgs.insert(0, imgs[0].copy())
                 flag = False
 
         if self.transform != None: # only video transformation is applicable

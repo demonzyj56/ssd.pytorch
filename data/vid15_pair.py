@@ -7,6 +7,9 @@ from vid.dataset.imagenet_vid import ImageNetVID, VID_CLASSES
 from vid.utils.load_data import load_gt_roidb, merge_roidb, filter_roidb
 
 
+_DEBUG_VISUALIZE = False
+
+
 class VIDPairDetection(torch.utils.data.Dataset):
     """ ImageNet VID Video Detection object.
     """
@@ -25,6 +28,7 @@ class VIDPairDetection(torch.utils.data.Dataset):
             is_test: whether it is a test dataset.
             --k: the size of context
         """
+        assert transform is not None
         self.transform = transform
         self.name = dataset_name
         self.is_test = is_test
@@ -69,37 +73,32 @@ class VIDPairDetection(torch.utils.data.Dataset):
                 imgs.append(imgs[-1])
                 gt_pair = gt
 
+        boxes = [gt[0].copy(), gt_pair[0].copy()]
+        labels = [gt[1].copy()-1, gt_pair[1].copy()-1]
+        if imgs[0] is imgs[-1]:
+            imgs[-1] = imgs[-1].copy()
+        imgs, boxes, labels = self.transform(imgs, boxes, labels)
+
         # -------------- visualization ------------------
-        # from matplotlib import pyplot as plt
-        # plt.imshow(imgs[0][:, :, (2, 1, 0)]); plt.show()
-        # plt.imshow(imgs[1][:, :, (2, 1, 0)]); plt.show()
+        if _DEBUG_VISUALIZE:
+            import matplotlib.pyplot as plt
+            mean = (104, 117, 123)
+            for img, box, label in zip(imgs, boxes, labels):
+                img_display = img.copy() + mean
+                img_display[img_display>255] = 255.
+                img_display[img_display<0] = 0.
+                h, w, _ = img_display.shape
+                plt.imshow(img_display[:, :, (2, 1, 0)]/255)
+                for j in range(box.shape[0]):
+                    coords = (box[j, 0]*w, box[j, 1]*h), \
+                             (box[j, 2] - box[j, 0])*w, (box[j, 3] - box[j, 1])*h
+                    plt.gca().add_patch(plt.Rectangle(*coords, fill=False, linewidth=2, edgecolor='red'))
+                    plt.gca().text(coords[0][0], coords[0][1], VID_CLASSES[label[j]], bbox={'facecolor': 'red', 'alpha': 0.5})
+                plt.show()
+        imgs = [torch.from_numpy(img[:, :, (2, 1, 0)]).permute(2, 0, 1) for img in imgs]
+        targets = [np.hstack((box, np.expand_dims(label, axis=1))) for box, label in zip(boxes, labels)]
 
-        if self.transform != None:
-            image1, boxes1, labels1 = self.transform(imgs[0], gt[0], gt[1]-1)
-            image2, boxes2, labels2 = self.transform(imgs[1], gt_pair[0], gt_pair[1]-1)
-            image1 = torch.from_numpy(image1[:, :, (2, 1, 0)]).permute(2, 0, 1)
-            image2 = torch.from_numpy(image2[:, :, (2, 1, 0)]).permute(2, 0, 1)
-            target1 = np.hstack((boxes1, np.expand_dims(labels1, axis=1)))
-            target2 = np.hstack((boxes2, np.expand_dims(labels2, axis=1)))
-
-        return (image1, target1), (image2, target2)
-
-        # num = gt[0].shape[0]
-        # gt[0] = np.concatenate((gt[0], gt_pair[0]), axis=0)
-        # gt[1] = np.concatenate((gt[1], gt_pair[1]), axis=0)
-        #
-        # if self.transform != None:
-        #     imgs, boxes, labels = self.transform(imgs, gt[0], gt[1]-1)
-        #     im = []
-        #     for i in range(2):
-        #         im.append(torch.from_numpy(imgs[i][:, :, (2, 1, 0)]).permute(2, 0, 1))
-        #     target = np.hstack((boxes, np.expand_dims(labels, axis=1)))
-        #     target = (target[:num, :], target[num:, :])
-        #
-        # imgs = torch.stack(im, 0)
-        #
-        # return imgs, target
-
+        return list(zip(imgs, targets))
 
     def pull_item(self, index):
         """ Mimic VOCDetection.
@@ -114,7 +113,9 @@ class VIDPairDetection(torch.utils.data.Dataset):
             img, boxes, labels = self.transform(img, roi_rec['boxes'], roi_rec['gt_classes']-1)
             img = img[:, :, (2, 1, 0)]
             target = np.hstack((boxes, np.expand_dims(labels, axis=1)))
-        return torch.from_numpy(img).permute(2, 0, 1), target, roi_rec['height'], roi_rec['width']
+        image_set = roi_rec['image'].split('/')[-2]
+        assert image_set.startswith('ILSVRC')
+        return torch.from_numpy(img).permute(2, 0, 1), target, roi_rec['height'], roi_rec['width'], image_set
 
     def pull_orig_item(self, index, is_context):
         """
