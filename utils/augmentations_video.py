@@ -109,11 +109,13 @@ class ToAbsoluteCoords(object):
 
 class ToAbsoluteCoords_video(object):
     def __call__(self, images, boxes=None, labels=None):
-        height, width, channels = images[0].shape
-        boxes[:, 0] *= width
-        boxes[:, 2] *= width
-        boxes[:, 1] *= height
-        boxes[:, 3] *= height
+        """ Do separately for each image and annotation pair. """
+        for idx, img in enumerate(images):
+            height, width, channels = img.shape
+            boxes[idx][:, 0] *= width
+            boxes[idx][:, 2] *= width
+            boxes[idx][:, 1] *= height
+            boxes[idx][:, 3] *= height
 
         return images, boxes, labels
 
@@ -130,11 +132,13 @@ class ToPercentCoords(object):
 
 class ToPercentCoords_video(object):
     def __call__(self, images, boxes=None, labels=None):
-        height, width, channels = images[0].shape
-        boxes[:, 0] /= width
-        boxes[:, 2] /= width
-        boxes[:, 1] /= height
-        boxes[:, 3] /= height
+        """ Do separately for each image and annotation pair. """
+        for idx, img in enumerate(images):
+            height, width, channels = img.shape
+            boxes[idx][:, 0] /= width
+            boxes[idx][:, 2] /= width
+            boxes[idx][:, 1] /= height
+            boxes[idx][:, 3] /= height
 
         return images, boxes, labels
 
@@ -467,20 +471,29 @@ class RandomSampleCrop_video(object):
             boxes (Tensor): the adjusted bounding boxes in pt form
             labels (Tensor): the class labels for each bbox
     """
-    def __init__(self):
-        self.sample_options = (
-            # using entire original input image
-            None,
-            # sample a patch s.t. MIN jaccard w/ obj in .1,.3,.4,.7,.9
-            (0.1, None),
-            (0.3, None),
-            (0.7, None),
-            (0.9, None),
-            # randomly sample a patch
-            (None, None),
-        )
+    def __init__(self, sample_options=None):
+        """ Allows custom sample options to be used. """
+        if sample_options is None:
+            self.sample_options = (
+                # using entire original input image
+                None,
+                # sample a patch s.t. MIN jaccard w/ obj in .1,.3,.4,.7,.9
+                (0.1, None),
+                (0.3, None),
+                (0.7, None),
+                (0.9, None),
+                # randomly sample a patch
+                (None, None),
+            )
+        else:
+            self.sample_options = sample_options
 
     def __call__(self, images, boxes=None, labels=None):
+        """ We assumes that all image frames have equal size, which is
+        reasonable for videos.
+        For videos, we enforce a more strict cropping rule that the sample options
+        should be wrt unions of all boxes.
+        """
         height, width, _ = images[0].shape
         while True:
             # randomly choose a mode
@@ -511,10 +524,10 @@ class RandomSampleCrop_video(object):
                 rect = np.array([int(left), int(top), int(left+w), int(top+h)])
 
                 # calculate IoU (jaccard overlap) b/t the cropped and gt boxes
-                overlap = jaccard_numpy(boxes, rect)
+                overlap = jaccard_numpy(np.concatenate(boxes, axis=0), rect)
 
                 # is min and max overlap constraint satisfied? if not try again
-                if overlap.min() < min_iou and max_iou < overlap.max():
+                if overlap.min() < min_iou or max_iou < overlap.max():
                     continue
 
                 # cut the crop from the image
@@ -524,39 +537,48 @@ class RandomSampleCrop_video(object):
                     current_images.append(images[i][rect[1]:rect[3], rect[0]:rect[2],
                                               :])
 
+                box_masks = []
+                for box in boxes:
+                    # keep overlap with gt box IF center in sampled patch
+                    centers = (box[:, :2] + box[:, 2:]) / 2.0
 
-                # keep overlap with gt box IF center in sampled patch
-                centers = (boxes[:, :2] + boxes[:, 2:]) / 2.0
+                    # mask in all gt boxes that above and to the left of centers
+                    m1 = (rect[0] < centers[:, 0]) * (rect[1] < centers[:, 1])
 
-                # mask in all gt boxes that above and to the left of centers
-                m1 = (rect[0] < centers[:, 0]) * (rect[1] < centers[:, 1])
+                    # mask in all gt boxes that under and to the right of centers
+                    m2 = (rect[2] > centers[:, 0]) * (rect[3] > centers[:, 1])
 
-                # mask in all gt boxes that under and to the right of centers
-                m2 = (rect[2] > centers[:, 0]) * (rect[3] > centers[:, 1])
+                    # mask in that both m1 and m2 are true
+                    mask = m1 * m2
 
-                # mask in that both m1 and m2 are true
-                mask = m1 * m2
+                    box_masks.append(mask)
 
-                # have any valid boxes? try again if not
-                if not mask.any():
+                # try again if all box is not valid
+                if not all([m.any() for m in box_masks]):
                     continue
 
-                # take only matching gt boxes
-                current_boxes = boxes[mask, :].copy()
+                current_boxes = []
+                current_labels = []
+                for box, mask, label in zip(boxes, box_masks, labels):
+                    # take only matching gt boxes
+                    current_box = box[mask, :].copy()
 
-                # take only matching gt labels
-                current_labels = labels[mask]
+                    # take only matching gt labels
+                    current_label = label[mask]
 
-                # should we use the box left and top corner or the crop's
-                current_boxes[:, :2] = np.maximum(current_boxes[:, :2],
-                                                  rect[:2])
-                # adjust to crop (by substracting crop's left,top)
-                current_boxes[:, :2] -= rect[:2]
+                    # should we use the box left and top corner or the crop's
+                    current_box[:, :2] = np.maximum(current_box[:, :2], rect[:2])
 
-                current_boxes[:, 2:] = np.minimum(current_boxes[:, 2:],
-                                                  rect[2:])
-                # adjust to crop (by substracting crop's left,top)
-                current_boxes[:, 2:] -= rect[:2]
+                    # adjust to crop (by substracting crop's left,top)
+                    current_box[:, :2] -= rect[:2]
+
+                    current_box[:, 2:] = np.minimum(current_box[:, 2:], rect[2:])
+
+                    # adjust to crop (by substracting crop's left,top)
+                    current_box[:, 2:] -= rect[:2]
+
+                    current_boxes.append(current_box)
+                    current_labels.append(current_label)
 
                 return current_images, current_boxes, current_labels
 
@@ -590,15 +612,22 @@ class Expand(object):
         return image, boxes, labels
 
 class Expand_video(object):
-    def __init__(self, mean):
+    def __init__(self, mean, expand_factor=None):
         self.mean = mean
+        if expand_factor is None:
+            self.expand_factor = 4
+        else:
+            self.expand_factor = expand_factor
 
     def __call__(self, images, boxes, labels):
+        """ We actually assumes that all images have the same shape, which is
+        fair for videos.  Expand the frames and boxes by the same ratio.
+        Also notice that Expand assumes absolute coordinate. """
         if random.randint(2):
             return images, boxes, labels
 
         height, width, depth = images[0].shape
-        ratio = random.uniform(1, 4)
+        ratio = random.uniform(1, self.expand_factor)
         left = random.uniform(0, width*ratio - width)
         top = random.uniform(0, height*ratio - height)
 
@@ -608,18 +637,19 @@ class Expand_video(object):
         expand_image[:, :, :] = self.mean
 
         imgs = []
+        expand_boxes = []
         for i in range(len(images)):
             tmp_img = expand_image.copy()
             tmp_img[int(top):int(top + height),
                          int(left):int(left + width)] = images[i]
             imgs.append(tmp_img)
+            box = boxes[i].copy()
+            box[:, :2] += (int(left), int(top))
+            box[:, 2:] += (int(left), int(top))
+            expand_boxes.append(box)
         images = imgs
 
-        boxes = boxes.copy()
-        boxes[:, :2] += (int(left), int(top))
-        boxes[:, 2:] += (int(left), int(top))
-
-        return images, boxes, labels
+        return images, expand_boxes, labels
 
 
 class RandomMirror(object):
@@ -633,13 +663,18 @@ class RandomMirror(object):
 
 class RandomMirror_video(object):
     def __call__(self, images, boxes, classes):
-        _, width, _ = images[0].shape
+        """ Notice that random mirror assumes absolute coordinate. """
         if random.randint(2):
+            mirrored_boxes = []
             for i in range(len(images)):
+                width = images[i].shape[1]
                 images[i] = images[i][:, ::-1]
-            boxes = boxes.copy()
-            boxes[:, 0::2] = width - boxes[:, 2::-2]
-        return images, boxes, classes
+                box = boxes[i].copy()
+                box[:, 0::2] = width - box[:, 2::-2]
+                mirrored_boxes.append(box)
+        else:
+            mirrored_boxes = boxes
+        return images, mirrored_boxes, classes
 
 
 class SwapChannels(object):
@@ -764,16 +799,15 @@ class SSDAugmentation_Bus(object):
 
 
 class SSDAugmentationVideo(object):
-    """TODO(leoyolo): what is a good augmentation for videos? """
-    def __init__(self, size=300, mean=(104, 117, 123)):
+    def __init__(self, size=300, mean=(104, 117, 123), expand_factor=None, crop_factor=None):
         self.mean = mean
         self.size = size
         self.augment = Compose([
             ConvertFromInts_video(),
             ToAbsoluteCoords_video(),
             PhotometricDistort_video(),
-            Expand_video(self.mean),
-            RandomSampleCrop_video(),
+            Expand_video(self.mean, expand_factor),
+            RandomSampleCrop_video(crop_factor),
             RandomMirror_video(),
             ToPercentCoords_video(),
             Resize_video(self.size),
@@ -781,6 +815,7 @@ class SSDAugmentationVideo(object):
         ])
 
     def __call__(self, img, boxes, labels):
+        """ Input to SSDAugmentationVideo are lists of images and boxes and labels."""
         return self.augment(img, boxes, labels)
 
 
