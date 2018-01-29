@@ -30,6 +30,7 @@ parser.add_argument('--num_workers', default=4, type=int, help='Number of worker
 parser.add_argument('--iterations', default=120000, type=int, help='Number of training iterations')
 parser.add_argument('--start_iter', default=0, type=int, help='Begin counting iterations starting from this value (should be used with resume)')
 parser.add_argument('--cuda', default=True, type=str2bool, help='Use cuda to train model')
+parser.add_argument('--multigpu', default=False, type=str2bool, help='Use multigpu setting')
 parser.add_argument('--lr', '--learning-rate', default=1e-3, type=float, help='initial learning rate')
 parser.add_argument('--momentum', default=0.9, type=float, help='momentum')
 parser.add_argument('--weight_decay', default=5e-4, type=float, help='Weight decay for SGD')
@@ -38,6 +39,8 @@ parser.add_argument('--log_iters', default=True, type=bool, help='Print the loss
 parser.add_argument('--visdom', default=False, type=str2bool, help='Use visdom to for loss visualization')
 parser.add_argument('--send_images_to_visdom', type=str2bool, default=False, help='Sample a random image from each 10th batch, send it to visdom after augmentations step')
 parser.add_argument('--save_folder', default='weights/', help='Location to save checkpoint models')
+parser.add_argument('--expand_factor', default=4, type=float, help='Expand factor for augmentation')
+parser.add_argument('--crop_factor', default='(None, (0.5, None), (0.7, None), (0.9, None))', type=str, help='Crop factor for augmentation')
 parser.add_argument('--voc_root', default=VOCroot, help='Location of VOC root directory')
 parser.add_argument('--train_files', default='DET_train_30classes+VID_train_15frames', type=str,
                     help='Train sets to look up in data/, joined by +')
@@ -69,8 +72,9 @@ weight_decay = 0.0005
 stepvalues = (80000, 100000, 120000)
 gamma = args.gamma
 momentum = args.momentum
-expand_factor = 2.5
-crop_factor = (None, (0.5, None), (0.7, None), (0.9, None))
+expand_factor = args.expand_factor
+crop_factor = eval(args.crop_factor) if args.crop_factor is not None else None
+assert isinstance(crop_factor, tuple) or crop_factor is None
 
 if args.visdom:
     import visdom
@@ -80,8 +84,9 @@ ssd_net = build_ssd('train', ssd_dim, num_classes)
 net = ssd_net
 
 if args.cuda:
-    #  net = torch.nn.DataParallel(ssd_net)
     cudnn.benchmark = True
+    if args.multigpu:
+        net = torch.nn.DataParallel(ssd_net)
 else:
     print('not using cuda now!')
 
@@ -162,6 +167,7 @@ def train():
     batch_iterator = None
     data_loader = data.DataLoader(dataset, batch_size, num_workers=args.num_workers,
                                   shuffle=True, collate_fn=detection_collate, pin_memory=True)
+    tic = time.time()
     for iteration in range(args.start_iter, max_iter):
         if (not batch_iterator) or (iteration % epoch_size == 0):
             # create batch iterator
@@ -204,8 +210,9 @@ def train():
         loc_loss += loss_l.data[0]
         conf_loss += loss_c.data[0]
         if iteration % 10 == 0:
-            print('Timer: %.4f sec.' % (t1 - t0))
+            print('Timer (net): %.4f sec, time (total): %.4f sec.' % (t1-t0, (time.time()-tic)/10))
             print('iter ' + repr(iteration) + ' || Loss: %.4f ||' % (loss.data[0]), end=' ')
+            tic = time.time()
             if args.visdom and args.send_images_to_visdom:
                 random_batch_index = np.random.randint(images.size(0))
                 viz.image(images.data[random_batch_index].cpu().numpy())
