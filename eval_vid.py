@@ -148,7 +148,7 @@ if __name__ == '__main__':
     net = build_ssd('test', im_size, num_classes) # initialize SSD
     net.load_state_dict(torch.load(args.trained_model))
     net.eval()
-    print('Finished loading model!')
+    print('Finished loading model {}!'.format(args.trained_model))
     # load data
     dataset = VIDDetection([args.vid_val_list], 'data/', args.vid_root,
                            transform=BaseTransform(im_size, dataset_mean), is_test=True)
