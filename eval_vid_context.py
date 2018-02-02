@@ -9,8 +9,9 @@ import torch.backends.cudnn as cudnn
 from torch.autograd import Variable
 from data import VIDroot
 from data import VID_CLASSES as labelmap
-from data import VIDDetection, BaseTransform
-from ssd import build_ssd
+from data import BaseTransform
+from data.vid15_keyframe import VIDKeyframeDetection
+from ssd_keyframe import build_ssd_keyframe
 
 import sys
 import os
@@ -97,6 +98,10 @@ class Buffers(object):
         for _ in range(len(self._buffer)-self._buffer_size):
             self._buffer.pop(0)
 
+    def __len__(self):
+        """ The length of buffer. """
+        return len(self._buffer)
+
 
 def get_output_dir(name, phase):
     """Return the directory where experimental artifacts are placed.
@@ -140,9 +145,9 @@ def test_net(save_folder, net, cuda, dataset, transform, top_k,
             del buffers
             buffers = Buffers(buffer_size, video_name)
         sources = net.sources(x)
-        detections = net.decision_buffered(sources, buffers.get())
+        detections = net.decision_buffered(sources, buffers.get()).data
         buffers.update_queue(sources)
-        detect_time = _t['im_detect'].toc(average=True)
+        detect_time = _t['im_detect'].toc(average=False)
 
         # skip j = 0, because it's the background class
         for j in range(1, detections.size(1)):
@@ -175,13 +180,13 @@ if __name__ == '__main__':
     # load net
     num_classes = len(labelmap) + 1 # +1 background
     im_size = args.size
-    net = build_ssd('test', im_size, num_classes) # initialize SSD
+    net = build_ssd_keyframe('test', im_size, num_classes) # initialize SSD
     net.load_state_dict(torch.load(args.trained_model))
     net.eval()
     print('Finished loading model!')
     # load data
-    dataset = VIDDetection([args.vid_val_list], 'data/', args.vid_root,
-                           transform=BaseTransform(im_size, dataset_mean), is_test=True)
+    dataset = VIDKeyframeDetection([args.vid_val_list], 'data/', args.vid_root,
+                                   transform=BaseTransform(im_size, dataset_mean), is_test=True)
     if args.cuda:
         net = net.cuda()
         cudnn.benchmark = True
