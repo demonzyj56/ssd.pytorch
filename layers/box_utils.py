@@ -1,4 +1,6 @@
 import torch
+import numpy as np
+from vid.nms import gpu_nms
 
 def point_form(boxes):
     """ Convert prior_boxes to (xmin, ymin, xmax, ymax)
@@ -235,3 +237,14 @@ def nms(boxes, scores, overlap=0.5, top_k=200):
         # keep only elements with an IoU <= overlap
         idx = idx[IoU.le(overlap)]
     return keep, count
+
+
+def nms_fast(boxes, scores, overlap=0.5, top_k=200):
+    """ Apply the fast gpu version of nms that accepts numpy array as input. """
+    dets = np.hstack((boxes.cpu().numpy(), np.expand_dims(scores.cpu().numpy(), axis=1)))
+    keep = gpu_nms(dets, overlap)
+    keep = [int(k) for k in keep]
+    count = min(len(keep), top_k)
+    keep_torch = torch.LongTensor(keep[:count]).cuda()
+    return keep_torch, count
+    # return keep[:count], count
