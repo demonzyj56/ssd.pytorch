@@ -168,12 +168,12 @@ class VIDKeyframeDetection(torch.utils.data.Dataset):
 
 def detection_collate_context(batch):
     """ The inputs are collated as the following:
-    cat(image_tensor, context_image_tensor), corresponding_targets. """
+    (img1, img_ctx1, img2, img_ctx2, ...), corresponding_targets.
+    This is to fit for multigpu scenario."""
     images = []
-    context_images = []
     targets = []
     for img, img_ctx, target in batch:
         images.append(img)
-        context_images.append(img_ctx)
+        images.append(img_ctx)
         targets.append(torch.FloatTensor(target))
-    return torch.stack(images+context_images, 0), targets
+    return torch.stack(images, 0), targets

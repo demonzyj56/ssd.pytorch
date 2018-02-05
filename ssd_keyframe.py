@@ -105,7 +105,7 @@ class SSDKeyframe(nn.Module):
         batch_size = sources[0].size(0)
         sources_with_context = []
         for s, c in zip(sources, self.context):
-            ctx_val = c(s[batch_size//2:].detach()) + s[:batch_size//2]
+            ctx_val = c(s[1::2].detach()) + s[0::2]
             sources_with_context.append(
                 F.relu(ctx_val, inplace=True)
             )
