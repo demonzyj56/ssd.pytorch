@@ -324,3 +324,25 @@ class ImageNetVID(IMDB):
         print('Mean AP@0.5 = {:.4f}'.format(np.mean(ap)))
         info_str += 'Mean AP@0.5 = {:.4f}\n\n'.format(np.mean(ap))
         return info_str
+
+    def evaluate_recall_from_detections(self, detections, thresholds=None):
+        """ Evaluate recall from detection results.
+        Gather up boxes from all positive detections and re-organize to feed in
+        self.evaluate_recall. """
+        assert len(detections) == self.num_classes
+        assert all([len(d) == self.num_images for d in detections])
+        candidate_boxes = []
+        gt_roidb = self.gt_roidb()
+        for idx in range(self.num_images):
+            # ignore bg class
+            boxes = [detections[j][idx] for j in range(1, self.num_classes)]
+            boxes = np.concatenate([b[:, :-1] for b in boxes if len(b) > 0], axis=0)
+            candidate_boxes.append(boxes)
+            # unnormalize gt_roidb
+            if len(gt_roidb[idx]['boxes']) > 0:
+                gt_roidb[idx]['boxes'][:, 0] *= gt_roidb[idx]['width']
+                gt_roidb[idx]['boxes'][:, 2] *= gt_roidb[idx]['width']
+                gt_roidb[idx]['boxes'][:, 1] *= gt_roidb[idx]['height']
+                gt_roidb[idx]['boxes'][:, 3] *= gt_roidb[idx]['height']
+
+        return self.evaluate_recall(roidb=gt_roidb, candidate_boxes=candidate_boxes, thresholds=thresholds)

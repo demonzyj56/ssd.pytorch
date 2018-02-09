@@ -38,6 +38,8 @@ parser.add_argument('--vid_root', default=VIDroot, help='Location of VID root di
 parser.add_argument('--vid_val_list', default='VID_val_frames',
                     help='validation files found in ${vid_root}/${vid_val_list}.txt')
 parser.add_argument('--size', default=512, type=int, help='Which size to use (300/512)')
+parser.add_argument('--also-eval-recall', default=False, type=str2bool,
+                    help='Whether to evaluate recall for detections')
 
 args = parser.parse_args()
 
@@ -139,6 +141,9 @@ def test_net(save_folder, net, cuda, dataset, transform, top_k,
 
     print('Evaluating detections')
     dataset.evaluate_detections(all_boxes)
+    if args.also_eval_recall:
+        print('Evaulating detections with thresoholds {}'.format(0.5))
+        dataset.imdb.evaluate_recall_from_detections(all_boxes, thresholds=[0.5])
 
 
 if __name__ == '__main__':
