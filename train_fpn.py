@@ -125,7 +125,6 @@ def train():
                                   shuffle=True, collate_fn=detection_collate, pin_memory=True)
     tic = time.time()
     for iteration in range(args.start_iter, max_iter):
-        tic_other = time.time()
         if (not batch_iterator) or (iteration % epoch_size == 0):
             # create batch iterator
             batch_iterator = iter(data_loader)
@@ -143,7 +142,6 @@ def train():
         else:
             images = Variable(images)
             targets = [Variable(anno, volatile=True) for anno in targets]
-        toc_other = time.time()
         # forward
         t0 = time.time()
         out = net(images)
@@ -155,10 +153,7 @@ def train():
         optimizer.step()
         t1 = time.time()
         if iteration % 10 == 0:
-            #  print('Timer (net): %.4f sec, Timer (total): %.4f' % (t1 - t0, (time.time()-tic)/10))
-            print('net: {:.4f}s, other: {:.4f}s, total: {:.4f}s'.format(
-                t1-t0, toc_other-tic_other, (time.time()-tic)/10
-            ))
+            print('Timer: %.4f sec' % ((time.time()-tic)/10))
             print('iter ' + repr(iteration) + ' || Loss: %.4f ||' % (loss.data[0]), end=' ')
             tic = time.time()
         if iteration % 10000 == 0:
