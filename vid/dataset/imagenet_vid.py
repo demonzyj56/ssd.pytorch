@@ -346,3 +346,38 @@ class ImageNetVID(IMDB):
                 gt_roidb[idx]['boxes'][:, 3] *= gt_roidb[idx]['height']
 
         return self.evaluate_recall(roidb=gt_roidb, candidate_boxes=candidate_boxes, thresholds=thresholds)
+
+    def evaluate_recall_class_specific(self, detections, class_name, thresholds=None):
+        """ Evaulate recall for a specific class.
+        detections is the detection result for the evaluted class ONLY. """
+        assert len(detections) == self.num_images
+        class_to_index = dict(zip(self.classes, range(self.num_classes)))
+        class_index = class_to_index[class_name]
+        gt_roidb = self.gt_roidb()
+
+        def valid_roidb(roidb):
+            """ Filter roidb by class. """
+            keep = np.where(roidb['gt_classes'] == class_index)[0]
+            if len(keep) > 0:
+                roidb['boxes'] = roidb['boxes'][keep, :]
+                roidb['gt_classes'] = roidb['gt_classes'][keep]
+                roidb['gt_overlaps'] = roidb['gt_overlaps'][keep]
+                return roidb
+            else:
+                return None
+
+        valid_roidbs = [valid_roidb(roidb) for roidb in gt_roidb]
+        detections = [dets for idx, dets in enumerate(detections) if valid_roidbs[idx] is not None]
+        valid_roidbs = [r for r in valid_roidbs if r is not None]
+        print('Number of images for {}: {} -> {}'.format(class_name, self.num_images, len(valid_roidbs)))
+        for idx in range(len(detections)):
+            if len(detections[idx]) == 0:
+                detections[idx] = np.zeros((0, 4), dtype=np.float32)
+            else:
+                detections[idx] = detections[idx][:, :-1]
+            valid_roidbs[idx]['boxes'][:, 0] *= valid_roidbs[idx]['width']
+            valid_roidbs[idx]['boxes'][:, 2] *= valid_roidbs[idx]['width']
+            valid_roidbs[idx]['boxes'][:, 1] *= valid_roidbs[idx]['height']
+            valid_roidbs[idx]['boxes'][:, 3] *= valid_roidbs[idx]['height']
+
+        return self.evaluate_recall(roidb=valid_roidbs, candidate_boxes=detections, thresholds=thresholds)

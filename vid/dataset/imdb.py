@@ -259,7 +259,7 @@ class IMDB(object):
         area_counts = []
         for area_name, area_range in zip(area_names[1:], area_ranges[1:]):
             area_count = 0
-            for i in range(self.num_images):
+            for i in range(len(roidb)):
                 if candidate_boxes is None:
                     # default is use the non-gt boxes from roidb
                     non_gt_inds = np.where(roidb[i]['gt_classes'] == 0)[0]
@@ -275,13 +275,13 @@ class IMDB(object):
             log_info = 'percentage of {} {}'.format(area_name, area_count / total_counts)
             print(log_info)
             all_log_info += log_info
-        log_info = 'average number of proposal {}'.format(total_counts / self.num_images)
+        log_info = 'average number of proposal {}'.format(total_counts / len(roidb))
         print(log_info)
         all_log_info += log_info
         for area_name, area_range in zip(area_names, area_ranges):
             gt_overlaps = np.zeros(0)
             num_pos = 0
-            for i in range(self.num_images):
+            for i in range(len(roidb)):
                 # check for max_overlaps == 1 avoids including crowd annotations
                 max_gt_overlaps = roidb[i]['gt_overlaps'].max(axis=1)
                 gt_inds = np.where((roidb[i]['gt_classes'] > 0) & (max_gt_overlaps == 1))[0]
