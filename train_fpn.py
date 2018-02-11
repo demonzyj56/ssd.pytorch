@@ -111,8 +111,6 @@ criterion = MultiBoxLoss(num_classes, 0.5, True, 0, True, 3, 0.5, False, args.cu
 def train():
     net.train()
     # loss counters
-    loc_loss = 0  # epoch
-    conf_loss = 0
     epoch = 0
     print('Loading Dataset...')
 
@@ -122,50 +120,18 @@ def train():
     epoch_size = len(dataset) // args.batch_size
     print('Training SSD on', dataset.name)
     step_index = 0
-    if args.visdom:
-        # initialize visdom loss plot
-        lot = viz.line(
-            X=torch.zeros((1,)).cpu(),
-            Y=torch.zeros((1, 3)).cpu(),
-            opts=dict(
-                xlabel='Iteration',
-                ylabel='Loss',
-                title='Current SSD Training Loss',
-                legend=['Loc Loss', 'Conf Loss', 'Loss']
-            )
-        )
-        epoch_lot = viz.line(
-            X=torch.zeros((1,)).cpu(),
-            Y=torch.zeros((1, 3)).cpu(),
-            opts=dict(
-                xlabel='Epoch',
-                ylabel='Loss',
-                title='Epoch SSD Training Loss',
-                legend=['Loc Loss', 'Conf Loss', 'Loss']
-            )
-        )
     batch_iterator = None
     data_loader = data.DataLoader(dataset, batch_size, num_workers=args.num_workers,
                                   shuffle=True, collate_fn=detection_collate, pin_memory=True)
     tic = time.time()
     for iteration in range(args.start_iter, max_iter):
+        tic_other = time.time()
         if (not batch_iterator) or (iteration % epoch_size == 0):
             # create batch iterator
             batch_iterator = iter(data_loader)
         if iteration in stepvalues:
             step_index += 1
             adjust_learning_rate(optimizer, args.gamma, step_index)
-            if args.visdom:
-                viz.line(
-                    X=torch.ones((1, 3)).cpu() * epoch,
-                    Y=torch.Tensor([loc_loss, conf_loss,
-                        loc_loss + conf_loss]).unsqueeze(0).cpu() / epoch_size,
-                    win=epoch_lot,
-                    update='append'
-                )
-            # reset epoch loss counters
-            loc_loss = 0
-            conf_loss = 0
             epoch += 1
 
         # load train data
@@ -177,6 +143,7 @@ def train():
         else:
             images = Variable(images)
             targets = [Variable(anno, volatile=True) for anno in targets]
+        toc_other = time.time()
         # forward
         t0 = time.time()
         out = net(images)
@@ -187,32 +154,13 @@ def train():
         loss.backward()
         optimizer.step()
         t1 = time.time()
-        loc_loss += loss_l.data[0]
-        conf_loss += loss_c.data[0]
         if iteration % 10 == 0:
-            print('Timer (net): %.4f sec, Timer (total): %.4f' % (t1 - t0, (time.time()-tic)/10))
+            #  print('Timer (net): %.4f sec, Timer (total): %.4f' % (t1 - t0, (time.time()-tic)/10))
+            print('net: {:.4f}s, other: {:.4f}s, total: {:.4f}s'.format(
+                t1-t0, toc_other-tic_other, (time.time()-tic)/10
+            ))
             print('iter ' + repr(iteration) + ' || Loss: %.4f ||' % (loss.data[0]), end=' ')
             tic = time.time()
-            if args.visdom and args.send_images_to_visdom:
-                random_batch_index = np.random.randint(images.size(0))
-                viz.image(images.data[random_batch_index].cpu().numpy())
-        if args.visdom:
-            viz.line(
-                X=torch.ones((1, 3)).cpu() * iteration,
-                Y=torch.Tensor([loss_l.data[0], loss_c.data[0],
-                    loss_l.data[0] + loss_c.data[0]]).unsqueeze(0).cpu(),
-                win=lot,
-                update='append'
-            )
-            # hacky fencepost solution for 0th epoch plot
-            if iteration == 0:
-                viz.line(
-                    X=torch.zeros((1, 3)).cpu(),
-                    Y=torch.Tensor([loc_loss, conf_loss,
-                        loc_loss + conf_loss]).unsqueeze(0).cpu(),
-                    win=epoch_lot,
-                    update=True
-                )
         if iteration % 10000 == 0:
             print('Saving state, iter:', iteration)
             torch.save(ssd_net.state_dict(), 'weights/ssd{}_fpn_0712_{}.pth'.format(
