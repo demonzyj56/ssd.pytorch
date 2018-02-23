@@ -180,37 +180,16 @@ class VIDPairDetection(torch.utils.data.Dataset):
         return self.imdb.evaluate_detections(all_boxes)
 
 
-# def detection_collate_pair(batch):
-#     """Custom collate fn for dealing with batches of images that have a different
-#     number of associated object annotations (bounding boxes).
-#
-#     Arguments:
-#         batch: (tuple) A tuple of tensor images and lists of annotations
-#
-#     Return:
-#         A tuple containing:
-#             1) (tensor) batch of images stacked on their 0 dim
-#             2) (list of tensors) annotations for a given image are stacked on 0 dim
-#     """
-#     targets = []
-#     imgs = []
-#     for sample in batch:
-#         imgs.append(sample[0])
-#         targets.append(torch.FloatTensor(sample[1][0]))
-#         targets.append(torch.FloatTensor(sample[1][1]))
-#     return torch.stack(imgs, 0), targets
-
 def detection_collate_pair(batch):
     """ The inputs are collated as the following:
-    cat(image_tensor, image_pair_tensor), corresponding_targets. """
-    image = []
-    image_pair = []
-    target = []
-    target_pair = []
+    [img1, img_p1, img2, img_p2, ...], [target1, target_p1, target2, target_p2].
+    This is to respect the multigpu spliting scheme over batch dimension. """
+    images = []
+    targets = []
     for sample, sample_pair in batch:
-        image.append(sample[0])
-        image_pair.append(sample_pair[0])
-        target.append(torch.FloatTensor(sample[1]))
-        target_pair.append(torch.FloatTensor(sample_pair[1]))
-    return torch.stack(image+image_pair, 0), target+target_pair
+        images.append(sample[0])
+        images.append(sample_pair[0])
+        targets.append(torch.FloatTensor(sample[1]))
+        targets.append(torch.FloatTensor(sample_pair[1]))
+    return torch.stack(images, 0), targets
 
