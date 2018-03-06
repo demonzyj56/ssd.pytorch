@@ -63,9 +63,9 @@ class VIDKeyframeDetection(torch.utils.data.Dataset):
         return len(self.gt_roidb)
 
     def __getitem__(self, index):
-        """ Returns a pair of images and annotations for the first image.
+        """ Returns a pair of images and annotations.
         Return:
-            image, image_pair, target
+            image, image_pair, target, (target_pair)
         """
         return self.pull_item_with_random_context(index)
 
@@ -89,12 +89,16 @@ class VIDKeyframeDetection(torch.utils.data.Dataset):
         """ Pulls an image together with its context frames.  The target is
         from the original image only. """
         roi_rec = self.gt_roidb[index]
-        img = cv2.imread(roi_rec['image'], cv2.IMREAD_COLOR)
         select = np.random.randint(len(roi_rec['context']))
-        img_ctx = cv2.imread(roi_rec['context'][select]['image'], cv2.IMREAD_COLOR)
+        roi_ctx = roi_rec['context'][select]
+        img = cv2.imread(roi_rec['image'], cv2.IMREAD_COLOR)
+        #  img_ctx = cv2.imread(roi_rec['context'][select]['image'], cv2.IMREAD_COLOR)
+        img_ctx = cv2.imread(roi_ctx['image'], cv2.IMREAD_COLOR)
         # Copy as a workaround for video annotation
-        boxes = [roi_rec['boxes'], roi_rec['boxes'].copy()]
-        labels = [roi_rec['gt_classes']-1, roi_rec['gt_classes'].copy()-1]
+        #  boxes = [roi_rec['boxes'], roi_rec['boxes'].copy()]
+        #  labels = [roi_rec['gt_classes']-1, roi_rec['gt_classes'].copy()-1]
+        boxes = [roi_rec['boxes'], roi_ctx['boxes'].copy()]
+        labels = [roi_rec['gt_classes']-1, roi_ctx['gt_classes'].copy()-1]
         # img and img_ctx own different memory
         imgs = [img, img_ctx]
         imgs, boxes, labels = self.transform(imgs, boxes, labels)
@@ -118,8 +122,9 @@ class VIDKeyframeDetection(torch.utils.data.Dataset):
                 plt.show()
         imgs = [torch.from_numpy(img[:, :, (2, 1, 0)]).permute(2, 0, 1) for img in imgs]
         target = np.hstack((boxes[0], np.expand_dims(labels[0], axis=1)))
+        target_ctx = np.hstack((boxes[1], np.expand_dims(labels[1], axis=1)))
 
-        return imgs[0], imgs[1], target
+        return imgs[0], imgs[1], target, target_ctx
 
     def evaluate_detections(self, all_boxes):
         """ Evaluation code. """
@@ -172,8 +177,9 @@ def detection_collate_context(batch):
     This is to fit for multigpu scenario."""
     images = []
     targets = []
-    for img, img_ctx, target in batch:
+    for img, img_ctx, target, target_ctx in batch:
         images.append(img)
         images.append(img_ctx)
         targets.append(torch.FloatTensor(target))
+        targets.append(torch.FloatTensor(target_ctx))
     return torch.stack(images, 0), targets
