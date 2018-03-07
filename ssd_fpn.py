@@ -18,6 +18,9 @@ class SSDFPN(nn.Module):
            boxes specific to the layer's feature map size.
     See: https://arxiv.org/pdf/1512.02325.pdf for more details.
 
+    In specific, the FPN structure is only attached to the first three
+    layers, normalizing them to 256 channels.
+
     Args:
         phase: (string) Can be "test" or "train"
         base: VGG16 layers for input, size of either 300 or 500
@@ -71,7 +74,7 @@ class SSDFPN(nn.Module):
             if k % 2 == 1:
                 sources.append(x)
 
-        fp = self.fpn(sources)
+        fp = self.fpn(sources[:3]) + sources[3:]
         return fp
 
     def forward(self, x):
@@ -178,13 +181,9 @@ def add_extras(cfg, i, batch_norm=False):
 
 
 def fcn_subnet(in_channels, mid_channels, out_channels):
-    """ Build a 4-layer fcn subnet for confidence/location. """
+    """ Build a 2-layer fcn subnet for confidence/location. """
     return nn.Sequential(
         nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1),
-        nn.ReLU(inplace=True),
-        nn.Conv2d(mid_channels, mid_channels, kernel_size=3, padding=1),
-        nn.ReLU(inplace=True),
-        nn.Conv2d(mid_channels, mid_channels, kernel_size=3, padding=1),
         nn.ReLU(inplace=True),
         nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=1),
     )
@@ -194,7 +193,7 @@ def multibox_head_shared(vgg_layers, extra_layers, cfg, num_classes):
     """ We share the confidence and location with each source layer.
     This requires that the input dimension should be identical. """
     source_layers = [vgg_layers[24], vgg_layers[-2]]
-    source_layers += extra_layers[1::2]
+    source_layers.append(extra_layers[1])
     # all nn.Conv2d
     source_channels = [s.out_channels for s in source_layers]
     fpn = FPN(source_channels)
@@ -210,15 +209,15 @@ class FPN(nn.Module):
     first set is 1x1 conv to reduce the dimention to 256, and the second
     set is 3x3 conv on the merged feature map. """
 
-    def __init__(self, source_channels):
+    def __init__(self, source_channels, out_channels=256):
         super(FPN, self).__init__()
         self.conv1x1 = nn.ModuleList([
-            nn.Conv2d(s, 256, kernel_size=1) for s in source_channels
+            nn.Conv2d(s, out_channels, kernel_size=1) for s in source_channels
         ])
         # The first one does not require merging
         self.conv3x3 = nn.ModuleList([
-            nn.Conv2d(256, 256, kernel_size=3, padding=1) for s in
-            source_channels[:-1]
+            nn.Conv2d(out_channels, out_channels, kernel_size=3,
+                      padding=1) for _ in source_channels[:-1]
         ])
 
     def forward(self, sources):
