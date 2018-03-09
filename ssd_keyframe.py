@@ -41,7 +41,6 @@ class SSDKeyframe(nn.Module):
 
         self.loc = nn.ModuleList(head[0])
         self.conf = nn.ModuleList(head[1])
-        self.context = nn.ModuleList([self._context_module(c.in_channels) for c in self.conf])
 
         if phase == 'test':
             self.softmax = nn.Softmax()
@@ -76,42 +75,25 @@ class SSDKeyframe(nn.Module):
                     2: localization layers, Shape: [batch,num_priors*4]
                     3: priorbox layers, Shape: [2,num_priors*4]
         """
-        sources = list()
+        sources = self.sources(x)
         loc = list()
         conf = list()
 
-        # apply vgg up to conv4_3 relu
-        for k in range(23):
-            x = self.vgg[k](x)
-
-        s = self.L2Norm(x)
-        sources.append(s)
-
-        # apply vgg up to fc7
-        for k in range(23, len(self.vgg)):
-            x = self.vgg[k](x)
-        sources.append(x)
-
-        # apply extra layers and cache source layer outputs
-        for k, v in enumerate(self.extras):
-            x = F.relu(v(x), inplace=True)
-            if k % 2 == 1:
-                sources.append(x)
 
         # compute context and sum to corresponding sources
         # Note for 'keyframe' setting, only the first half are the keyframes, and
         # the second half serve only for context.
         # Note that the minibatch is organized as [sources, sources_pair].
-        batch_size = sources[0].size(0)
-        sources_with_context = []
-        for s, c in zip(sources, self.context):
-            ctx_val = c(s[1::2].detach()) + s[0::2]
-            sources_with_context.append(
-                F.relu(ctx_val, inplace=True)
-            )
+        # batch_size = sources[0].size(0)
+        # sources_with_context = []
+        # for s, c in zip(sources, self.context):
+        #     ctx_val = c(s[1::2].detach()) + s[0::2]
+        #     sources_with_context.append(
+        #         F.relu(ctx_val, inplace=True)
+        #     )
 
         # apply multibox head to source layers
-        for (x, l, c) in zip(sources_with_context, self.loc, self.conf):
+        for (x, l, c) in zip(sources, self.loc, self.conf):
             loc.append(l(x).permute(0, 2, 3, 1).contiguous())
             conf.append(c(x).permute(0, 2, 3, 1).contiguous())
 

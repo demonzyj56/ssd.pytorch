@@ -53,6 +53,7 @@ class VIDKeyframeDetection(torch.utils.data.Dataset):
             self.vid_context_roidb = load_gt_roidb(dataset_name, vid_context_set,
                                                    root_path, dataset_path,
                                                    result_path, flip=False)
+            self.vid_context_roidb = filter_roidb(self.vid_context_roidb)
             # Not necessary...
             # self.vid_context_roidb.sort(key=lambda entry: entry['image'])
             filtered_roidb = [self._enrich_roidb_with_context(roidb, self.vid_context_roidb)

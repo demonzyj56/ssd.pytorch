@@ -80,10 +80,20 @@ class MultiBoxPairLoss(nn.Module):
         pos = conf_t > 0
         # num_pos = pos.sum(keepdim=True)
 
-        # Loss between adjacent pairs.
-        loss_p_1 = self.pair_loss(conf_data[:num//2], conf_data[num//2:], conf_t[:num//2])
-        loss_p_2 = self.pair_loss(conf_data[num//2:], conf_data[:num//2], conf_t[num//2:])
-        loss_p = loss_p_1 + loss_p_2
+        conf_data_cur = conf_data[0::2]
+        conf_data_next = conf_data[1::2]
+        conf_t_cur = conf_t[0::2]
+        conf_t_next = conf_t[1::2]
+        mask = (conf_t_cur.gt(0) & conf_t_next.gt(0) & conf_t_cur.eq(conf_t_next))
+        mask_idx = mask.unsqueeze(-1).expand_as(conf_data_cur)
+        cur_selected = conf_data_cur[mask_idx].view(-1, self.num_classes)
+        next_selected = conf_data_next[mask_idx].view(-1, self.num_classes)
+        idx_selected = conf_t_cur[mask].view(-1, 1)
+        cur_selected = F.log_softmax(cur_selected, dim=1).gather(1, idx_selected)
+        next_selected = F.log_softmax(next_selected, dim=1).gather(1, idx_selected)
+        kl_source = cur_selected.min(next_selected).view(-1)
+        kl_target = cur_selected.max(next_selected).exp().view(-1).detach()
+        loss_p = -kl_source.dot(kl_target)
 
         # Localization Loss (Smooth L1)
         # Shape: [batch,num_priors,4]
@@ -118,17 +128,6 @@ class MultiBoxPairLoss(nn.Module):
         N = num_pos.data.sum()
         loss_l /= N
         loss_c /= N
+        loss_p /= N
         return loss_l, loss_c, loss_p
 
-    def pair_loss(self, conf_data_current, conf_data_next, conf_t):
-        """ conf_data shape: [batch_size, num_priors, num_classes]
-            conf_t: [batch_size, num_priors]
-        """
-        pos = conf_t.gt(0).unsqueeze(-1).expand_as(conf_data_current)
-        targets = conf_data_current.detach()[pos].view(-1, self.num_classes)
-        inputs = conf_data_next[pos].view(-1, self.num_classes)
-
-        inputs = F.log_softmax(inputs, dim=1)
-        targets = F.softmax(targets, dim=1)
-
-        return F.kl_div(inputs, targets) * self.num_classes

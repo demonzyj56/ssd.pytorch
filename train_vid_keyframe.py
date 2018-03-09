@@ -11,7 +11,8 @@ from data import v2_512, v2, VOCroot
 from data import VIDroot, VID_CLASSES
 from data.vid15_keyframe import VIDKeyframeDetection, detection_collate_context
 from utils.augmentations_video import SSDAugmentationVideo
-from layers.modules import MultiBoxLoss
+#  from layers.modules import MultiBoxLoss
+from layers.modules.multibox_pair_loss import MultiBoxPairLoss
 from ssd_keyframe import build_ssd_keyframe
 import numpy as np
 import time
@@ -26,13 +27,15 @@ parser.add_argument('--version', default='v2_512', help='conv11_2(v2) or pool6(v
 parser.add_argument('--basenet', default='vgg16_reducedfc.pth', help='pretrained base model')
 parser.add_argument('--jaccard_threshold', default=0.5, type=float, help='Min Jaccard index for matching')
 parser.add_argument('--batch_size', default=8, type=int, help='Batch size for training')
-parser.add_argument('--resume', default=None, type=str, help='Resume from checkpoint')
+#  parser.add_argument('--resume', default='./weights/vid_ssd_v2_512_baseline_160000_map_67.31.pth', type=str, help='Resume from checkpoint')
+#  parser.add_argument('--resume', default=None, type=str, help='Resume from checkpoint')
+parser.add_argument('--resume', default='./weights/ssd512_vid_baseline_120000_backup.pth', type=str, help='Resume from checkpoint')
 parser.add_argument('--num_workers', default=4, type=int, help='Number of workers used in dataloading')
-parser.add_argument('--iterations', default=120000, type=int, help='Number of training iterations')
+parser.add_argument('--iterations', default=10000, type=int, help='Number of training iterations')
 parser.add_argument('--start_iter', default=0, type=int, help='Begin counting iterations starting from this value (should be used with resume)')
 parser.add_argument('--cuda', default=True, type=str2bool, help='Use cuda to train model')
 parser.add_argument('--multigpu', default=False, type=str2bool, help='Use multigpu setting')
-parser.add_argument('--lr', '--learning-rate', default=1e-3, type=float, help='initial learning rate')
+parser.add_argument('--lr', '--learning-rate', default=1e-4, type=float, help='initial learning rate')
 parser.add_argument('--momentum', default=0.9, type=float, help='momentum')
 parser.add_argument('--weight_decay', default=5e-4, type=float, help='Weight decay for SGD')
 parser.add_argument('--gamma', default=0.1, type=float, help='Gamma update for SGD')
@@ -71,7 +74,8 @@ accum_batch_size = 32
 iter_size = accum_batch_size / batch_size
 max_iter = args.iterations
 weight_decay = 0.0005
-stepvalues = (80000, 100000, 120000)
+#  stepvalues = (80000, 100000, 120000)
+stepvalues = (-1, )  # no steps
 gamma = args.gamma
 momentum = args.momentum
 expand_factor = args.expand_factor
@@ -118,14 +122,16 @@ def weights_init(m):
 if not args.resume:
     print('Initializing weights...')
     # initialize newly added layers' weights with xavier method
-    ssd_net.extras.apply(weights_init)
-    ssd_net.loc.apply(weights_init)
-    ssd_net.conf.apply(weights_init)
-    ssd_net.context.apply(weights_init)
+    # ssd_net.extras.apply(weights_init)
+    # ssd_net.loc.apply(weights_init)
+    # ssd_net.conf.apply(weights_init)
+    #  ssd_net.context.apply(weights_init)
+    ssd_net.apply(weights_init)
 
 optimizer = optim.SGD(net.parameters(), lr=args.lr,
                       momentum=args.momentum, weight_decay=args.weight_decay)
-criterion = MultiBoxLoss(num_classes, 0.5, True, 0, True, 3, 0.5, False, args.cuda)
+#  criterion = MultiBoxLoss(num_classes, 0.5, True, 0, True, 3, 0.5, False, args.cuda)
+criterion = MultiBoxPairLoss(num_classes, 0.5, True, 0, True, 3, 0.5, False, args.cuda)
 
 
 def train():
@@ -203,8 +209,8 @@ def train():
         out = net(images)
         # backprop
         optimizer.zero_grad()
-        loss_l, loss_c = criterion(out, targets)
-        loss = loss_l + loss_c
+        loss_l, loss_c, loss_p = criterion(out, targets)
+        loss = loss_l + loss_c + loss_p
         loss.backward()
         optimizer.step()
         t1 = time.time()
@@ -212,7 +218,7 @@ def train():
         conf_loss += loss_c.data[0]
         if iteration % 10 == 0:
             print('Timer (net): %.4f sec, time (total): %.4f sec.' % (t1-t0, (time.time()-tic)/10))
-            print('iter ' + repr(iteration) + ' || Loss: %.4f ||' % (loss.data[0]), end=' ')
+            print('iter ' + repr(iteration) + ' || loc loss: %.4f, conf loss: %.4f, pair loss: %.4f ||' % (loss_l.data[0], loss_c.data[0], loss_p.data[0]), end=' ')
             tic = time.time()
             if args.visdom and args.send_images_to_visdom:
                 random_batch_index = np.random.randint(images.size(0))
@@ -236,10 +242,12 @@ def train():
                 )
         if iteration % 10000 == 0:
             print('Saving state, iter:', iteration)
-            torch.save(ssd_net.state_dict(), 'weights/ssd{}_vid_context_{}.pth'.format(
+            torch.save(ssd_net.state_dict(), 'weights/ssd{}_vid_keyframe_{}.pth'.format(
                 args.size, iteration
             ))
-    torch.save(ssd_net.state_dict(), args.save_folder + 'vid_ssd_context_' + args.version + '.pth')
+    final_checkpoint = args.save_folder + 'vid_ssd_context_' + args.version + '.pth'
+    print('Saving model to {}'.format(final_checkpoint))
+    torch.save(ssd_net.state_dict(), final_checkpoint)
 
 
 def adjust_learning_rate(optimizer, gamma, step):
