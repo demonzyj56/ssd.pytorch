@@ -16,7 +16,8 @@ import torch.utils.data as data
 
 from data import AnnotationTransform, VOCDetection, BaseTransform, VOC_CLASSES
 #  from ssd import build_ssd
-from ssd_fpn import build_ssd_fpn
+#  from ssd_fpn import build_ssd_fpn
+from ssd_fpn_unshared import build_ssd_fpn
 
 import sys
 import os

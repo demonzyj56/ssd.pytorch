@@ -11,7 +11,8 @@ from data import v2_512, v2, v1, AnnotationTransform, VOCDetection, detection_co
 from utils.augmentations import SSDAugmentation
 from layers.modules import MultiBoxLoss
 #  from ssd import build_ssd
-from ssd_fpn import build_ssd_fpn
+#  from ssd_fpn import build_ssd_fpn
+from ssd_fpn_unshared import build_ssd_fpn
 import numpy as np
 import time
 from pprint import pprint
@@ -40,6 +41,7 @@ parser.add_argument('--visdom', default=False, type=str2bool, help='Use visdom t
 parser.add_argument('--send_images_to_visdom', type=str2bool, default=False, help='Sample a random image from each 10th batch, send it to visdom after augmentations step')
 parser.add_argument('--save_folder', default='weights/', help='Location to save checkpoint models')
 parser.add_argument('--voc_root', default=VOCroot, help='Location of VOC root directory')
+parser.add_argument('--warm_up', default=0, type=int, help='Warm up iterations before training')
 args = parser.parse_args()
 print('Args:')
 pprint(args)
@@ -124,10 +126,21 @@ def train():
     data_loader = data.DataLoader(dataset, batch_size, num_workers=args.num_workers,
                                   shuffle=True, collate_fn=detection_collate, pin_memory=True)
     tic = time.time()
-    for iteration in range(args.start_iter, max_iter):
+    warm_up = False
+    for iteration in range(args.start_iter-args.warm_up, max_iter):
         if (not batch_iterator) or (iteration % epoch_size == 0):
             # create batch iterator
             batch_iterator = iter(data_loader)
+        if iteration >= 0 and warm_up:
+            print('Resume lr to {}'.format(args.lr))
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = args.lr
+            warm_up = False
+        if iteration < 0 and not warm_up:
+            print('Warming up for {:d} iterations: set lr to {}'.format(args.warm_up, args.lr/10))
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = args.lr / 10
+            warm_up = True
         if iteration in stepvalues:
             step_index += 1
             adjust_learning_rate(optimizer, args.gamma, step_index)
