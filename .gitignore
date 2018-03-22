@@ -113,6 +113,7 @@ data/visualization/
 doc/visualize.py
 read_results.py
 ssd300_120000/
+ssd320_120000/
 ssd512_120000/
 demos/live
 webdemo.py
