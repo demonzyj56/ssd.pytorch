@@ -170,8 +170,7 @@ class ResNetReduced(nn.Module):
         return conv3, conv4, conv5
 
 
-def resnet34_reduced(pretrained=False, atrous=False, freeze_batchnorm=False,
-                     freeze_first_two_block=False):
+def resnet34_reduced(pretrained=False, atrous=False, freeze_batchnorm=False):
     """ Returns ResNet-34 model. """
     model = ResNetReduced(BasicBlock, [3, 4, 6, 3], atrous)
     if pretrained:
@@ -180,13 +179,11 @@ def resnet34_reduced(pretrained=False, atrous=False, freeze_batchnorm=False,
     if freeze_batchnorm:
         for m in model.modules():
             if isinstance(m, nn.BatchNorm2d):
-                for param in m.parameters():
-                    param.requires_grad = False
-    if freeze_first_two_block:
-        for block in (model.conv1, model.bn1, model.layer1):
-            for m in block.modules():
-                for param in m.parameters():
-                    param.requires_grad = False
+                # Freeze weight and bias in affine transformation
+                m.weight.requires_grad = False
+                m.bias.requires_grad = False
+                # Still compute running mean/var, but do not update
+                m.momentum = 0
 
     return model
 
@@ -200,8 +197,11 @@ def resnet50_reduced(pretrained=False, atrous=False, freeze_batchnorm=False):
     if freeze_batchnorm:
         for m in model.modules():
             if isinstance(m, nn.BatchNorm2d):
-                for param in m.parameters():
-                    param.requires_grad = False
+                # Freeze weight and bias in affine transformation
+                m.weight.requires_grad = False
+                m.bias.requires_grad = False
+                # Still compute running mean/var, but do not update
+                m.momentum = 0
 
     return model
 
@@ -215,8 +215,11 @@ def resnet101_reduced(pretrained=False, atrous=False, freeze_batchnorm=False):
     if freeze_batchnorm:
         for m in model.modules():
             if isinstance(m, nn.BatchNorm2d):
-                for param in m.parameters():
-                    param.requires_grad = False
+                # Freeze weight and bias in affine transformation
+                m.weight.requires_grad = False
+                m.bias.requires_grad = False
+                # Still compute running mean/var, but do not update
+                m.momentum = 0
 
     return model
 
@@ -519,19 +522,19 @@ class SSD(nn.Module):
 
 
 def build_ssd(phase='train', size=320, num_classes=21, body='resnet34',
-              extra_config='normal'):
+              freeze_batchnorm=False, extra_config='normal'):
     """ Factory function to build SSD. """
     if body == 'resnet34':
         resnet = resnet34_reduced(pretrained=True, atrous=False,
-                                  freeze_batchnorm=False)
+                                  freeze_batchnorm=freeze_batchnorm)
         source_channels = [128, 256, 512]
     elif body == 'resnet50':
         resnet = resnet50_reduced(pretrained=True, atrous=False,
-                                  freeze_batchnorm=False)
+                                  freeze_batchnorm=freeze_batchnorm)
         source_channels = [512, 1024, 2048]
     elif body == 'resnet101':
         resnet = resnet101_reduced(pretrained=True, atrous=False,
-                                   freeze_batchnorm=False)
+                                   freeze_batchnorm=freeze_batchnorm)
         source_channels = [512, 1024, 2048]
     else:
         raise ValueError('Body {} is not supported'.format(body))
