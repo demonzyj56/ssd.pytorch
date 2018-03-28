@@ -92,7 +92,8 @@ class MultiBoxLoss(nn.Module):
         # Compute max conf across batch for hard negative mining
         batch_conf = conf_data.view(-1, self.num_classes)
 
-        loss_c = log_sum_exp(batch_conf) - batch_conf.gather(1, conf_t.view(-1, 1))
+        #  loss_c = log_sum_exp(batch_conf) - batch_conf.gather(1, conf_t.view(-1, 1))
+        loss_c = -F.log_softmax(batch_conf, dim=1).gather(1, conf_t.view(-1, 1))
 
         # Hard Negative Mining
         loss_c[pos] = 0  # filter out pos boxes for now
@@ -122,6 +123,20 @@ class MultiBoxLoss(nn.Module):
         loss_c = F.cross_entropy(conf_p, targets_weighted, size_average=False)
 
         # Sum of losses: L(x,c,l,g) = (Lconf(x, c) + αLloc(x,l,g)) / N
+        if 0:  # XXX debug
+            pos_det = conf_data[pos_idx].view(-1, self.num_classes)
+            _, pos_pred = torch.max(pos_det, dim=1)
+            gt = conf_t[pos]
+            neg_det = conf_data[neg_idx].view(-1, self.num_classes)
+            _, neg_pred = torch.max(neg_det, dim=1)
+            _, pred = torch.max(conf_p, dim=1)
+            import ipdb; ipdb.set_trace()  # XXX BREAKPOINT
+            print('Positive acc: {:.4f}, negative acc: {:.4f}, acc: {:.4f}'.format(
+                (pos_pred==gt).long().sum().data[0]/len(gt),
+                neg_pred.eq(0).long().sum().data[0]/len(neg_pred),
+                pred.eq(targets_weighted).long().sum().data[0]/len(pred)
+            ))
+
 
         N = num_pos.data.sum()
 
